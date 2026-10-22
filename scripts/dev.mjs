@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 
 const run = (cmd, args) => spawn(cmd, args, { stdio: "inherit", shell: process.platform === "win32" });
 const procs = [
-  run("node", ["--env-file-if-exists=.env.local", "server/terminal-server.mjs"]),
+  run("node", ["server/terminal-server.mjs"]),
   run("npx", ["next", "dev", ...process.argv.slice(2)]),
 ];
 const stop = () => procs.forEach((p) => p.kill("SIGTERM"));

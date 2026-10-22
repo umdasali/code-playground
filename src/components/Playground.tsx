@@ -1,10 +1,13 @@
 "use client";
 
 import Editor from "@monaco-editor/react";
+import { CheckCircle2, Clock, Code2, Database, FileCode2, Globe, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { C_EXAMPLES, CPP_EXAMPLES, type Example } from "@/lib/examples";
 import { TABS, type TabId } from "@/lib/languages";
 import MySqlWorkspace from "./MySqlWorkspace";
 import Terminal from "./Terminal";
+import { Button, cn, ExamplesMenu } from "./ui";
 import WebPlayground from "./WebPlayground";
 
 interface RunResult {
@@ -15,6 +18,17 @@ interface RunResult {
   durationMs: number;
   error?: string;
 }
+
+const TAB_ICONS: Record<TabId, LucideIcon> = {
+  c: Braces,
+  cpp: FileCode2,
+  bash: SquareTerminal,
+  terminal: TerminalIcon,
+  web: Globe,
+  mysql: Database,
+};
+
+const EXAMPLES: Partial<Record<TabId, Example[]>> = { c: C_EXAMPLES, cpp: CPP_EXAMPLES };
 
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -32,36 +46,35 @@ export default function Playground() {
   const [run, setRun] = useState<RunResult | null>(null);
 
   const cfg = TABS.find((t) => t.id === tab)!;
-  const codeKey = tab;
-  const starter = cfg.starter;
-  const code = codes[codeKey] ?? store.get(`pg:code:${codeKey}`) ?? starter;
+  const code = codes[tab] ?? store.get(`pg:code:${tab}`) ?? cfg.starter;
 
   const setCode = (v: string) => {
-    setCodes((c) => ({ ...c, [codeKey]: v }));
-    store.set(`pg:code:${codeKey}`, v);
+    setCodes((c) => ({ ...c, [tab]: v }));
+    store.set(`pg:code:${tab}`, v);
   };
   const switchTab = (t: TabId) => {
     setTab(t);
     store.set("pg:tab", t);
     setRun(null);
   };
-
-  const post = useCallback(async (url: string, body: unknown) => {
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    return res.json();
-  }, []);
+  const pickExample = (ex: Example) => {
+    setCode(ex.code);
+    setStdin(ex.stdin ?? "");
+    setRun(null);
+  };
 
   const execute = useCallback(async () => {
-    setBusy(true); setRun(null);
+    setBusy(true);
+    setRun(null);
     try {
-        const data = await post("/api/run", { lang: tab, code, stdin });
-        setRun(data);
+      const res = await fetch("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lang: tab, code, stdin }) });
+      setRun(await res.json());
     } catch {
       setRun({ stdout: "", stderr: "Network error.", exitCode: null, timedOut: false, durationMs: 0 });
     } finally {
       setBusy(false);
     }
-  }, [tab, code, stdin, post]);
+  }, [tab, code, stdin]);
 
   const custom = tab === "mysql" || tab === "terminal" || tab === "web";
   const openInC = (src: string) => {
@@ -73,65 +86,92 @@ export default function Playground() {
   // Ctrl/Cmd+Enter runs the code.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!custom && (e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); if (!busy) execute(); }
+      if (!custom && (e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); if (!busy) void execute(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, execute, custom]);
 
   const showStdin = tab === "c" || tab === "cpp" || tab === "bash";
+  const examples = EXAMPLES[tab];
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center gap-1 border-b border-zinc-800 px-3">
-        <span className="mr-4 py-3 text-sm font-semibold text-zinc-300">Coding Playground</span>
-        {TABS.map((t) => (
-          <button key={t.id} onClick={() => switchTab(t.id)}
-            className={`px-3 py-3 text-sm border-b-2 ${tab === t.id ? "border-sky-500 text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"}`}>
-            {t.label}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-2 py-2">
-          {!custom && <>
-          <button onClick={() => setCode(starter)} className="rounded border border-zinc-700 px-3 py-1 text-xs hover:bg-zinc-800">Reset code</button>
-          <button disabled={busy} onClick={execute} className="rounded bg-sky-600 px-4 py-1 text-sm font-medium hover:bg-sky-500 disabled:opacity-50">
-            {busy ? "Running…" : "Run ▶"}
-          </button></>}
+    <div className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
+      <header className="flex items-stretch border-b border-zinc-800 bg-zinc-950">
+        <div className="flex shrink-0 items-center gap-2 pl-3 pr-2 sm:pr-4">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-sky-600/20 text-sky-400"><Code2 size={16} aria-hidden /></span>
+          <span className="hidden text-sm font-semibold text-zinc-200 md:inline">Coding Playground</span>
         </div>
+        <nav className="no-scrollbar flex min-w-0 flex-1 overflow-x-auto" aria-label="Playgrounds">
+          {TABS.map((t) => {
+            const Icon = TAB_ICONS[t.id];
+            const active = tab === t.id;
+            return (
+              <button key={t.id} onClick={() => switchTab(t.id)} aria-current={active ? "page" : undefined} title={t.label}
+                className={cn(
+                  "group relative flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-3 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/70 active:bg-zinc-800",
+                  active ? "border-sky-500 text-white" : "border-transparent text-zinc-400 hover:border-zinc-600 hover:bg-zinc-900 hover:text-zinc-100",
+                )}>
+                <Icon size={15} className={cn("transition-colors", active ? "text-sky-400" : "text-zinc-500 group-hover:text-zinc-300")} aria-hidden />
+                <span className={cn(!active && "hidden lg:inline")}>{t.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </header>
 
-      {tab === "mysql" ? <MySqlWorkspace /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col">
+      {tab === "mysql" ? <MySqlWorkspace /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
+        <main className="flex min-h-0 flex-1 flex-col">
+          <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-900/40 px-3 py-2">
+            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{cfg.label}</span>
+            {examples && <ExamplesMenu examples={examples} onPick={pickExample} />}
+            <div className="ml-auto flex items-center gap-2">
+              <Button icon={RotateCcw} onClick={() => { setCode(cfg.starter); setStdin(""); setRun(null); }} iconOnlyOnSmall title="Restore the starter code">Reset</Button>
+              <Button variant="primary" icon={Play} loading={busy} onClick={() => void execute()} title="Run (Ctrl/⌘ + Enter)">{busy ? "Running" : "Run"}</Button>
+            </div>
+          </div>
+
           <div className="min-h-0 flex-1">
             <Editor
-              height="100%" theme="vs-dark" language={cfg.monaco} path={codeKey} value={code}
+              height="100%" theme="vs-dark" language={cfg.monaco} path={tab} value={code}
               onChange={(v) => setCode(v ?? "")}
-              options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, automaticLayout: true }}
+              options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, automaticLayout: true, padding: { top: 8 } }}
             />
           </div>
-          {showStdin && (
-            <textarea value={stdin} onChange={(e) => setStdin(e.target.value)} placeholder="stdin (optional)" rows={2}
-              className="resize-none border-t border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-xs outline-none" />
-          )}
-          <section className="h-1/3 min-h-32 overflow-auto border-t border-zinc-800 bg-black/40 p-3 font-mono text-xs">
-            <Output run={run} />
-          </section>
+
+          <div className="grid min-h-0 shrink-0 grid-rows-[auto_1fr] border-t border-zinc-800 md:h-[34%] md:min-h-40 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:grid-rows-1">
+            {showStdin && (
+              <label className="flex flex-col border-b border-zinc-800 md:border-b-0 md:border-r">
+                <span className="flex items-center gap-1.5 bg-zinc-900/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><Keyboard size={12} aria-hidden />Input (stdin)</span>
+                <textarea value={stdin} onChange={(e) => setStdin(e.target.value)} placeholder="Values your program reads, e.g. 17 5" rows={2}
+                  className="min-h-0 flex-1 resize-none bg-zinc-950 px-3 py-2 font-mono text-xs outline-none transition-colors placeholder:text-zinc-600 hover:bg-zinc-900/60 focus:bg-zinc-900/60 md:min-h-0" />
+              </label>
+            )}
+            <section className={cn("flex min-h-28 flex-col overflow-hidden bg-black/40 max-md:h-48", !showStdin && "md:col-span-2")}>
+              <div className="flex items-center gap-1.5 bg-zinc-900/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><TerminalIcon size={12} aria-hidden />Output</div>
+              <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs"><Output run={run} busy={busy} /></div>
+            </section>
+          </div>
         </main>
-      </div>}
-      {!custom && <footer className="border-t border-zinc-800 px-3 py-1 text-[11px] text-zinc-500">Ctrl/⌘ + Enter to run</footer>}
+      )}
     </div>
   );
 }
 
-function Output({ run }: { run: RunResult | null }) {
-  if (!run) return <span className="text-zinc-500">Output appears here.</span>;
-  if (run.error) return <pre className="text-rose-400">{run.error}</pre>;
+function Output({ run, busy }: { run: RunResult | null; busy: boolean }) {
+  if (busy) return <span className="text-zinc-500">Compiling and running…</span>;
+  if (!run) return <span className="text-zinc-500">Press Run (Ctrl/⌘ + Enter) to see output here.</span>;
+  if (run.error) return <pre className="whitespace-pre-wrap text-rose-400">{run.error}</pre>;
+  const ok = run.exitCode === 0 && !run.timedOut;
+  const Status = run.timedOut ? Clock : ok ? CheckCircle2 : XCircle;
   return (
     <div>
       {run.stdout && <pre className="whitespace-pre-wrap">{run.stdout}</pre>}
       {run.stderr && <pre className="whitespace-pre-wrap text-rose-400">{run.stderr}</pre>}
-      <p className="mt-2 text-zinc-500">
-        {run.timedOut ? "Timed out." : `Exited with code ${run.exitCode}`} · {run.durationMs} ms
+      <p className={cn("mt-2 flex items-center gap-1.5", ok ? "text-emerald-400" : "text-amber-400")}>
+        <Status size={14} aria-hidden />
+        {run.timedOut ? "Timed out" : `Exited with code ${run.exitCode}`}
+        <span className="text-zinc-500">· {run.durationMs} ms</span>
       </p>
     </div>
   );

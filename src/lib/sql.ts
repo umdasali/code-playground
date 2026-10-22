@@ -1,13 +1,11 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 import mysql, { type Connection } from "mysql2/promise";
+import { config, sessionSecret } from "./config";
 import { buildSampleSql } from "./sample-data";
 
-const HOST = process.env.MYSQL_HOST ?? "127.0.0.1";
-const PORT = Number(process.env.MYSQL_PORT ?? 3306);
-const ADMIN_USER = process.env.MYSQL_ADMIN_USER ?? "root";
-const ADMIN_PASSWORD = process.env.MYSQL_ADMIN_PASSWORD ?? "";
-const SECRET = process.env.MYSQL_SESSION_SECRET ?? "dev-only-secret-change-me";
+const { host: HOST, port: PORT, adminUser: ADMIN_USER, adminPassword: ADMIN_PASSWORD } = config.mysql;
+const SECRET = sessionSecret();
 const MAX_ROWS = 500;
 
 export const SESSION_ID = /^[a-f0-9]{16,32}$/;

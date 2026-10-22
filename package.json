@@ -8,12 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "dev:next": "next dev",
-    "terminal": "node --env-file-if-exists=.env.local server/terminal-server.mjs"
+    "terminal": "node server/terminal-server.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^1.61.0",
     "mysql2": "^3.24.6",
     "next": "16.4.2",
     "node-pty": "^1.1.0",

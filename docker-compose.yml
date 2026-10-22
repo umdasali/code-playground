@@ -3,7 +3,7 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ADMIN_PASSWORD:-playground}
+      MYSQL_ROOT_PASSWORD: playground
     ports:
       - "127.0.0.1:3306:3306"
     volumes:

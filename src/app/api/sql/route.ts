@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     const e = err as { message?: string; code?: string };
     const unreachable = e.code === "ECONNREFUSED" || e.code === "ETIMEDOUT";
     return Response.json(
-      { error: unreachable ? "Cannot reach MySQL. Start it with `docker compose up -d` and check .env.local." : (e.message ?? "Query failed.") },
+      { error: unreachable ? "Cannot reach MySQL. Start it with `docker compose up -d`." : (e.message ?? "Query failed.") },
       { status: unreachable ? 503 : 400 },
     );
   }

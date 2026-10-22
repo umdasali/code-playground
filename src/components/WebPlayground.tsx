@@ -1,6 +1,8 @@
 "use client";
 
 import Editor from "@monaco-editor/react";
+import { Braces, Eraser, FileCode2, Globe, Palette, Play, RotateCcw, Terminal as TerminalIcon, type LucideIcon } from "lucide-react";
+import { Button, cn } from "./ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Part = "html" | "css" | "js";
@@ -46,10 +48,10 @@ btn.addEventListener("click", () => {
 `,
 };
 
-const EDITORS: { part: Part; label: string; lang: string }[] = [
-  { part: "html", label: "HTML", lang: "html" },
-  { part: "css", label: "CSS", lang: "css" },
-  { part: "js", label: "JavaScript", lang: "javascript" },
+const EDITORS: { part: Part; label: string; lang: string; icon: LucideIcon }[] = [
+  { part: "html", label: "HTML", lang: "html", icon: FileCode2 },
+  { part: "css", label: "CSS", lang: "css", icon: Palette },
+  { part: "js", label: "JavaScript", lang: "javascript", icon: Braces },
 ];
 
 const store = {
@@ -131,23 +133,28 @@ export default function WebPlayground() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-zinc-800 px-3 py-1.5 text-xs">
-        <label className="flex items-center gap-1.5 text-zinc-400">
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Live preview
+      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs">
+        <label className="flex cursor-pointer items-center gap-2 text-zinc-400 transition-colors hover:text-zinc-200">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-3.5 w-3.5 cursor-pointer accent-sky-500" /> Live preview
         </label>
-        <button onClick={run} className="rounded bg-sky-600 px-3 py-1 font-medium text-white hover:bg-sky-500">Run ▶</button>
-        <button onClick={reset} className="rounded border border-zinc-700 px-3 py-1 hover:bg-zinc-800">Reset code</button>
-        <span className="ml-auto text-zinc-500">Runs in a sandboxed iframe</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button icon={RotateCcw} onClick={reset} iconOnlyOnSmall title="Restore the starter code">Reset</Button>
+          <Button variant="primary" icon={Play} onClick={run} title="Re-run the preview">Run</Button>
+        </div>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-2">
-        <div className="flex min-h-0 flex-col border-r border-zinc-800">
-          <div className="flex border-b border-zinc-800 bg-zinc-900/60">
-            {EDITORS.map((ed) => (
-              <button key={ed.part} onClick={() => setActive(ed.part)}
-                className={`border-b-2 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide ${active === ed.part ? "border-sky-500 text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"}`}>
-                {ed.label}
-              </button>
-            ))}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-2 lg:overflow-hidden">
+        <div className="flex h-[22rem] min-h-0 flex-col border-b border-zinc-800 lg:h-auto lg:border-b-0 lg:border-r">
+          <div role="tablist" className="no-scrollbar flex overflow-x-auto border-b border-zinc-800 bg-zinc-900/60">
+            {EDITORS.map((ed) => {
+              const Icon = ed.icon;
+              return (
+                <button key={ed.part} role="tab" aria-selected={active === ed.part} onClick={() => setActive(ed.part)}
+                  className={cn("group flex cursor-pointer items-center gap-1.5 border-b-2 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors active:bg-zinc-800",
+                    active === ed.part ? "border-sky-500 text-white" : "border-transparent text-zinc-400 hover:border-zinc-600 hover:bg-zinc-900 hover:text-zinc-100")}>
+                  <Icon size={13} className={active === ed.part ? "text-sky-400" : "text-zinc-500 group-hover:text-zinc-300"} aria-hidden />{ed.label}
+                </button>
+              );
+            })}
           </div>
           <div className="min-h-0 flex-1">
             <Editor height="100%" theme="vs-dark" language={activeEd.lang} path={`web-${active}`} value={code[active]}
@@ -155,12 +162,12 @@ export default function WebPlayground() {
               options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2 }} />
           </div>
         </div>
-        <div className="flex min-h-0 flex-col">
-          <div className="border-b border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Preview</div>
+        <div className="flex h-[32rem] min-h-0 flex-col lg:h-auto">
+          <div className="flex items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400"><Globe size={13} aria-hidden />Preview</div>
           <iframe ref={frame} title="Preview" srcDoc={doc.html} sandbox="allow-scripts allow-modals allow-forms" className="min-h-0 flex-[2] bg-white" />
-          <div className="flex items-center border-y border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Console
-            <button onClick={() => setLines([])} className="ml-auto rounded border border-zinc-700 px-2 py-0.5 normal-case tracking-normal hover:bg-zinc-800">Clear</button>
+          <div className="flex items-center gap-1.5 border-y border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <TerminalIcon size={13} aria-hidden />Console
+            <Button size="sm" className="ml-auto" icon={Eraser} onClick={() => setLines([])} iconOnlyOnSmall title="Clear the console">Clear</Button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto bg-black/40 p-2 font-mono text-xs">
             {lines.length === 0 && <span className="text-zinc-500">console.log output and errors appear here.</span>}

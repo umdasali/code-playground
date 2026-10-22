@@ -4,14 +4,13 @@ import { randomBytes } from "node:crypto";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { NO_DOCKER_MESSAGE, runnerMode } from "../../server/runner-mode.mjs";
+import { config } from "./config";
 
-// "docker": every run happens in a throwaway, network-less container (use this anywhere untrusted users can reach the app).
-// "local":  runs directly on this machine as your user. Development convenience only.
-export const MODE = process.env.RUNNER_MODE ?? "docker";
-const TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS ?? 10_000);
+const TIMEOUT_MS = config.runTimeoutMs;
 const MAX_OUTPUT = 64 * 1024;
-const IMAGE_GCC = process.env.SANDBOX_IMAGE_GCC ?? "gcc:14";
-export const IMAGE_LINUX = process.env.SANDBOX_IMAGE_LINUX ?? "ubuntu:24.04";
+const IMAGE_GCC = config.imageGcc;
+export const IMAGE_LINUX = config.imageLinux;
 
 export interface RunResult {
   stdout: string;
@@ -44,6 +43,10 @@ function execute(job: Job): Promise<RunResult> {
 }
 
 export function spawnJob(dir: string, job: Job): Promise<RunResult> {
+  const MODE = runnerMode();
+  if (MODE === "none") {
+    return Promise.resolve({ stdout: "", stderr: NO_DOCKER_MESSAGE, exitCode: null, timedOut: false, durationMs: 0 });
+  }
   const name = `pg-${randomBytes(6).toString("hex")}`;
   const [cmd, args] =
     MODE === "local"
@@ -90,7 +93,7 @@ export function spawnJob(dir: string, job: Job): Promise<RunResult> {
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      const hint = MODE === "docker" ? " (is Docker installed and running? Set RUNNER_MODE=local for dev.)" : "";
+      const hint = MODE === "docker" ? " (is the Docker daemon running?)" : "";
       resolve({ stdout, stderr: `${err.message}${hint}`, exitCode: null, timedOut, durationMs: Date.now() - started });
     });
     child.on("close", (code) => {

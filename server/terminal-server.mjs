@@ -1,6 +1,7 @@
 // Real terminal backend: one persistent PTY shell per browser session, streamed over a WebSocket.
-//   RUNNER_MODE=docker (default): the shell runs in a network-less container with only the session folder mounted.
-//   RUNNER_MODE=local: the shell runs directly on this machine as you. Development only.
+//   Docker available: the shell runs in a network-less container with only the session folder mounted.
+//   No Docker (development only): the shell runs on this machine as you, reachable from localhost only.
+//   No Docker in production: refused. No configuration is needed; the mode is detected.
 import { spawn as spawnProc } from "node:child_process";
 import { chmodSync, existsSync, readdirSync } from "node:fs";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
@@ -9,18 +10,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pty from "node-pty";
 import { WebSocketServer } from "ws";
+import { NO_DOCKER_MESSAGE, runnerMode } from "./runner-mode.mjs";
 import { seedSession } from "./seed.mjs";
 
-const PORT = Number(process.env.TERMINAL_PORT ?? 3001);
-const HOST = process.env.TERMINAL_HOST ?? "127.0.0.1";
-const MODE = process.env.RUNNER_MODE ?? "docker";
-const IMAGE = process.env.SANDBOX_IMAGE_LINUX ?? "ubuntu:24.04";
-const ORIGINS = process.env.TERMINAL_ALLOWED_ORIGINS?.split(",").map((s) => s.trim());
+const PORT = 3001; // keep in sync with the client in src/components/Terminal.tsx
+const MODE = runnerMode();
+// Docker-backed shells are sandboxed, so they may be reached from other machines. An unsandboxed local shell never is.
+const HOST = MODE === "docker" ? "0.0.0.0" : "127.0.0.1";
+const IMAGE = "ubuntu:24.04"; // or "playground-linux" after: docker build -t playground-linux -f docker/linux.Dockerfile .
 const ROOT = path.join(tmpdir(), "pg-term");
 const IDLE_MS = 30 * 60_000;
 const MAX_LIFE_MS = 4 * 60 * 60_000;
 const DIR_TTL_MS = 2 * 60 * 60_000;
-const MAX_SESSIONS = Number(process.env.TERMINAL_MAX_SESSIONS ?? 20);
+const MAX_SESSIONS = 20;
 const SESSION_RE = /^[a-f0-9]{16,32}$/;
 
 // npm skips install scripts, which leaves node-pty's prebuilt helper without its execute bit.
@@ -36,11 +38,14 @@ const sessions = new Map(); // id -> { term, ws, timers }
 
 const containerName = (id) => `pg-term-${id.slice(0, 16)}`;
 
-function originAllowed(origin) {
+// Browsers always send Origin, so this stops other websites from driving a visitor's terminal.
+// Allowed: localhost, or a page served from the same hostname as this server.
+function originAllowed(origin, hostHeader) {
   if (!origin) return false;
-  if (ORIGINS) return ORIGINS.includes(origin);
   try {
-    return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname);
+    const host = new URL(origin).hostname;
+    if (["localhost", "127.0.0.1", "[::1]"].includes(host)) return true;
+    return !!hostHeader && host === new URL(`http://${hostHeader}`).hostname;
   } catch {
     return false;
   }
@@ -98,7 +103,11 @@ wss.on("connection", async (ws, req) => {
   const url = new URL(req.url ?? "/", "http://x");
   const id = url.searchParams.get("session") ?? "";
 
-  if (!originAllowed(req.headers.origin)) return ws.close(1008, "origin not allowed");
+  if (!originAllowed(req.headers.origin, req.headers.host)) return ws.close(1008, "origin not allowed");
+  if (MODE === "none") {
+    send({ t: "o", d: `\r\n${NO_DOCKER_MESSAGE}\r\n` });
+    return ws.close(1011, "no docker");
+  }
   if (!SESSION_RE.test(id)) return ws.close(1008, "bad session");
   if (!sessions.has(id) && sessions.size >= MAX_SESSIONS) {
     send({ t: "o", d: "\r\nServer is busy, try again in a few minutes.\r\n" });
@@ -148,5 +157,8 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => { if (sessions.get(id) === s) killSession(id); });
 });
 
-wss.on("listening", () => console.log(`[terminal] ws://${HOST}:${PORT} (${MODE} mode)`));
+wss.on("listening", () => {
+  console.log(`[terminal] ws://${HOST}:${PORT} (${MODE} mode)`);
+  if (MODE === "local") console.log("[terminal] Docker not found: shells run directly on this machine (development only).");
+});
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { for (const id of [...sessions.keys()]) killSession(id); process.exit(0); });

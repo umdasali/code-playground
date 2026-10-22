@@ -15,7 +15,7 @@ export default function SqlResults({ results }: { results: SqlResult[] }) {
                 </thead>
                 <tbody>
                   {r.rows.map((row, k) => (
-                    <tr key={k}>
+                    <tr key={k} className="transition-colors hover:bg-zinc-800/60">
                       {row.map((v, j) => (
                         <td key={j} className="border border-zinc-800 px-2 py-1">{v === null ? <i className="text-zinc-500">NULL</i> : String(v)}</td>
                       ))}
