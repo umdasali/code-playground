@@ -1,5 +1,4 @@
-// Deterministic sample dataset shared by the browser (SQLite) and server (MySQL) engines.
-// Tables: departments, employees, customers, categories, products, orders, order_items, reviews.
+// Deterministic sample dataset for the SQL tab. Tables: departments, employees, customers, categories, products, orders, order_items, reviews.
 export type Dialect = "sqlite" | "mysql";
 
 function rng(seed: number) {

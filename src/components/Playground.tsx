@@ -1,23 +1,15 @@
 "use client";
 
 import Editor from "@monaco-editor/react";
-import { CheckCircle2, Clock, Code2, Database, FileCode2, Globe, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, type LucideIcon } from "lucide-react";
+import { CheckCircle2, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { C_EXAMPLES, CPP_EXAMPLES, type Example } from "@/lib/examples";
 import { TABS, type TabId } from "@/lib/languages";
+import { CXX_LIMIT_NOTE, runBash, runNative, type RunResult } from "@/lib/wasm";
 import MySqlWorkspace from "./MySqlWorkspace";
 import Terminal from "./Terminal";
 import { Button, cn, ExamplesMenu } from "./ui";
 import WebPlayground from "./WebPlayground";
-
-interface RunResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  timedOut: boolean;
-  durationMs: number;
-  error?: string;
-}
 
 const TAB_ICONS: Record<TabId, LucideIcon> = {
   c: Braces,
@@ -44,6 +36,7 @@ export default function Playground() {
   const [stdin, setStdin] = useState("");
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<RunResult | null>(null);
+  const [status, setStatus] = useState<{ message: string; percent: number | null } | null>(null);
 
   const cfg = TABS.find((t) => t.id === tab)!;
   const code = codes[tab] ?? store.get(`pg:code:${tab}`) ?? cfg.starter;
@@ -66,13 +59,13 @@ export default function Playground() {
   const execute = useCallback(async () => {
     setBusy(true);
     setRun(null);
+    setStatus({ message: "Starting…", percent: null });
+    const onStatus = (message: string, percent: number | null) => setStatus({ message, percent });
     try {
-      const res = await fetch("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lang: tab, code, stdin }) });
-      setRun(await res.json());
-    } catch {
-      setRun({ stdout: "", stderr: "Network error.", exitCode: null, timedOut: false, durationMs: 0 });
+      setRun(tab === "bash" ? await runBash(code, stdin, onStatus) : await runNative(tab === "cpp" ? "cpp" : "c", code, stdin, onStatus));
     } finally {
       setBusy(false);
+      setStatus(null);
     }
   }, [tab, code, stdin]);
 
@@ -131,6 +124,11 @@ export default function Playground() {
             </div>
           </div>
 
+          {tab === "cpp" && (
+            <p className="flex items-start gap-2 border-b border-amber-900/40 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-200/90">
+              <Info size={14} className="mt-0.5 shrink-0" aria-hidden />{CXX_LIMIT_NOTE}
+            </p>
+          )}
           <div className="min-h-0 flex-1">
             <Editor
               height="100%" theme="vs-dark" language={cfg.monaco} path={tab} value={code}
@@ -149,7 +147,7 @@ export default function Playground() {
             )}
             <section className={cn("flex min-h-28 flex-col overflow-hidden bg-black/40 max-md:h-48", !showStdin && "md:col-span-2")}>
               <div className="flex items-center gap-1.5 bg-zinc-900/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><TerminalIcon size={12} aria-hidden />Output</div>
-              <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs"><Output run={run} busy={busy} /></div>
+              <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs"><Output run={run} busy={busy} status={status} /></div>
             </section>
           </div>
         </main>
@@ -158,8 +156,19 @@ export default function Playground() {
   );
 }
 
-function Output({ run, busy }: { run: RunResult | null; busy: boolean }) {
-  if (busy) return <span className="text-zinc-500">Compiling and running…</span>;
+function Output({ run, busy, status }: { run: RunResult | null; busy: boolean; status: { message: string; percent: number | null } | null }) {
+  if (busy) {
+    return (
+      <div className="max-w-sm space-y-2 text-zinc-400">
+        <p>{status?.message ?? "Working…"}</p>
+        {status?.percent != null && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800" role="progressbar" aria-valuenow={Math.round(status.percent)} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full rounded-full bg-sky-500 transition-[width] duration-300" style={{ width: `${status.percent}%` }} />
+          </div>
+        )}
+      </div>
+    );
+  }
   if (!run) return <span className="text-zinc-500">Press Run (Ctrl/⌘ + Enter) to see output here.</span>;
   if (run.error) return <pre className="whitespace-pre-wrap text-rose-400">{run.error}</pre>;
   const ok = run.exitCode === 0 && !run.timedOut;
@@ -167,10 +176,10 @@ function Output({ run, busy }: { run: RunResult | null; busy: boolean }) {
   return (
     <div>
       {run.stdout && <pre className="whitespace-pre-wrap">{run.stdout}</pre>}
-      {run.stderr && <pre className="whitespace-pre-wrap text-rose-400">{run.stderr}</pre>}
+      {run.stderr && <pre className={cn("whitespace-pre-wrap", ok ? "text-amber-300" : "text-rose-400")}>{run.stderr}</pre>}
       <p className={cn("mt-2 flex items-center gap-1.5", ok ? "text-emerald-400" : "text-amber-400")}>
         <Status size={14} aria-hidden />
-        {run.timedOut ? "Timed out" : `Exited with code ${run.exitCode}`}
+        {run.timedOut ? "Timed out" : run.exitCode === null ? "Did not run" : `Exited with code ${run.exitCode}`}
         <span className="text-zinc-500">· {run.durationMs} ms</span>
       </p>
     </div>

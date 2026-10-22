@@ -377,164 +377,72 @@ int main(void) {
 export const CPP_EXAMPLES: Example[] = [
   {
     category: "Basics", title: "Hello, World",
-    code: `#include <iostream>
+    code: `#include <cstdio>
 
 int main() {
-    std::cout << "Hello, World!\\n";
+    std::printf("Hello, World!\\n");
     return 0;
 }
 `,
   },
   {
-    category: "Basics", title: "Input and arithmetic", stdin: "Asha 17 5",
-    code: `#include <iostream>
-#include <string>
+    category: "Basics", title: "Input and arithmetic", stdin: "17 5",
+    code: `#include <cstdio>
 
 int main() {
-    std::string name;
     int a, b;
-    std::cout << "Enter name and two integers: ";
-    std::cin >> name >> a >> b;
+    std::printf("Enter two integers: ");
+    if (std::scanf("%d %d", &a, &b) != 2) return 1;
 
-    std::cout << "Hello, " << name << "!\\n"
-              << a << " + " << b << " = " << a + b << '\\n'
-              << a << " / " << b << " = " << static_cast<double>(a) / b << '\\n';
+    std::printf("%d + %d = %d\\n", a, b, a + b);
+    std::printf("%d / %d = %d (integer)\\n", a, b, a / b);
+    std::printf("%d / %d = %.3f (real)\\n", a, b, static_cast<double>(a) / b);
     return 0;
 }
 `,
   },
   {
-    category: "Basics", title: "auto, range-for, structured bindings",
-    code: `#include <iostream>
-#include <map>
-#include <string>
-#include <vector>
+    category: "Basics", title: "References, auto, constexpr, enum class",
+    code: `#include <cstdio>
+#include <initializer_list>
 
-int main() {
-    std::vector<int> nums{3, 1, 4, 1, 5, 9, 2, 6};
-    for (auto n : nums) std::cout << n << ' ';
-    std::cout << '\\n';
-
-    std::map<std::string, int> ages{{"Asha", 31}, {"Ben", 27}, {"Chen", 45}};
-    for (const auto &[name, age] : ages)
-        std::cout << name << " is " << age << '\\n';
-    return 0;
+namespace geometry {
+    constexpr double pi = 3.14159265358979;
+    constexpr double circle_area(double r) { return pi * r * r; }
 }
-`,
-  },
-  {
-    category: "STL containers", title: "vector and algorithms",
-    code: `#include <algorithm>
-#include <iostream>
-#include <numeric>
-#include <vector>
 
-int main() {
-    std::vector<int> v{5, 2, 8, 1, 9, 3};
+enum class Color { Red, Green, Blue };
 
-    std::sort(v.begin(), v.end());
-    for (int x : v) std::cout << x << ' ';
-    std::cout << '\\n';
-
-    std::cout << "sum   = " << std::accumulate(v.begin(), v.end(), 0) << '\\n';
-    std::cout << "max   = " << *std::max_element(v.begin(), v.end()) << '\\n';
-    std::cout << "has 8 = " << std::binary_search(v.begin(), v.end(), 8) << '\\n';
-
-    v.erase(std::remove_if(v.begin(), v.end(), [](int x) { return x % 2 == 0; }), v.end());
-    std::cout << "odds  =";
-    for (int x : v) std::cout << ' ' << x;
-    std::cout << '\\n';
-    return 0;
+const char *name_of(Color c) {
+    switch (c) {
+        case Color::Red:   return "red";
+        case Color::Green: return "green";
+        case Color::Blue:  return "blue";
+    }
+    return "?";
 }
-`,
-  },
-  {
-    category: "STL containers", title: "Word frequency (map)", stdin: "the quick brown fox jumps over the lazy dog the end",
-    code: `#include <iostream>
-#include <map>
-#include <string>
+
+void add_one(int &x) { x += 1; }          // reference parameter: modifies the caller's variable
 
 int main() {
-    std::map<std::string, int> freq;
-    std::string w;
-    while (std::cin >> w) ++freq[w];
-
-    for (const auto &[word, count] : freq)
-        std::cout << word << ": " << count << '\\n';
-    return 0;
-}
-`,
-  },
-  {
-    category: "STL containers", title: "stack, queue, priority_queue, set",
-    code: `#include <iostream>
-#include <queue>
-#include <set>
-#include <stack>
-#include <vector>
-
-int main() {
-    std::stack<int> st;
-    for (int i = 1; i <= 3; i++) st.push(i);
-    std::cout << "stack pop order:";
-    while (!st.empty()) { std::cout << ' ' << st.top(); st.pop(); }
-
-    std::queue<int> q;
-    for (int i = 1; i <= 3; i++) q.push(i);
-    std::cout << "\\nqueue order:";
-    while (!q.empty()) { std::cout << ' ' << q.front(); q.pop(); }
-
-    std::priority_queue<int> pq;
-    for (int x : {4, 9, 1, 7}) pq.push(x);
-    std::cout << "\\nmax-heap order:";
-    while (!pq.empty()) { std::cout << ' ' << pq.top(); pq.pop(); }
-
-    std::set<int> s{5, 3, 5, 1, 3};
-    std::cout << "\\nset (unique, sorted):";
-    for (int x : s) std::cout << ' ' << x;
-    std::cout << '\\n';
-    return 0;
-}
-`,
-  },
-  {
-    category: "Strings", title: "String operations",
-    code: `#include <algorithm>
-#include <cctype>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
-
-int main() {
-    std::string s = "Learning C++ is fun";
-    std::cout << "length: " << s.size() << '\\n';
-    std::cout << "find 'C++': " << s.find("C++") << '\\n';
-    std::cout << "substr: " << s.substr(0, 8) << '\\n';
-
-    std::string up = s;
-    std::transform(up.begin(), up.end(), up.begin(), [](unsigned char c) { return std::toupper(c); });
-    std::cout << "upper: " << up << '\\n';
-
-    std::string rev(s.rbegin(), s.rend());
-    std::cout << "reversed: " << rev << '\\n';
-
-    std::istringstream in(s);
-    std::vector<std::string> words;
-    for (std::string w; in >> w;) words.push_back(w);
-    std::cout << "words: " << words.size() << '\\n';
+    int n = 41;
+    add_one(n);
+    auto area = geometry::circle_area(2.0);   // computed at compile time
+    std::printf("n = %d, area = %.3f\\n", n, area);
+    for (Color c : {Color::Red, Color::Green, Color::Blue})
+        std::printf("%s ", name_of(c));
+    std::printf("\\n");
     return 0;
 }
 `,
   },
   {
     category: "Object-oriented", title: "Classes and encapsulation",
-    code: `#include <iostream>
-#include <string>
+    code: `#include <cstdio>
 
 class BankAccount {
 public:
-    BankAccount(std::string owner, double balance) : owner_(std::move(owner)), balance_(balance) {}
+    BankAccount(const char *owner, double balance) : owner_(owner), balance_(balance) {}
 
     bool withdraw(double amount) {
         if (amount > balance_) return false;
@@ -543,32 +451,30 @@ public:
     }
     void deposit(double amount) { balance_ += amount; }
     double balance() const { return balance_; }
-    const std::string &owner() const { return owner_; }
+    const char *owner() const { return owner_; }
 
 private:
-    std::string owner_;
+    const char *owner_;
     double balance_;
 };
 
 int main() {
     BankAccount acct("Asha", 100.0);
     acct.deposit(50);
-    std::cout << acct.owner() << " has " << acct.balance() << '\\n';
-    std::cout << "withdraw 500: " << (acct.withdraw(500) ? "ok" : "denied") << '\\n';
-    std::cout << "withdraw 30:  " << (acct.withdraw(30) ? "ok" : "denied") << '\\n';
-    std::cout << "balance now " << acct.balance() << '\\n';
+    std::printf("%s has %.2f\\n", acct.owner(), acct.balance());
+    std::printf("withdraw 500: %s\\n", acct.withdraw(500) ? "ok" : "denied");
+    std::printf("withdraw 30:  %s\\n", acct.withdraw(30) ? "ok" : "denied");
+    std::printf("balance now %.2f\\n", acct.balance());
     return 0;
 }
 `,
   },
   {
     category: "Object-oriented", title: "Inheritance and virtual functions",
-    code: `#include <iostream>
-#include <memory>
-#include <vector>
+    code: `#include <cstdio>
 
 struct Shape {
-    virtual ~Shape() = default;
+    virtual ~Shape() {}
     virtual double area() const = 0;
     virtual const char *name() const = 0;
 };
@@ -588,177 +494,224 @@ struct Rect : Shape {
 };
 
 int main() {
-    std::vector<std::unique_ptr<Shape>> shapes;
-    shapes.push_back(std::make_unique<Circle>(2.0));
-    shapes.push_back(std::make_unique<Rect>(3.0, 4.5));
-
-    for (const auto &s : shapes)            // dynamic dispatch
-        std::cout << s->name() << " area = " << s->area() << '\\n';
+    Shape *shapes[] = { new Circle(2.0), new Rect(3.0, 4.5) };
+    for (Shape *s : shapes)                       // dynamic dispatch through the base class
+        std::printf("%s area = %.2f\\n", s->name(), s->area());
+    for (Shape *s : shapes) delete s;
     return 0;
 }
 `,
   },
   {
     category: "Object-oriented", title: "Operator overloading",
-    code: `#include <iostream>
+    code: `#include <cstdio>
 
 struct Vec2 {
     double x, y;
     Vec2 operator+(const Vec2 &o) const { return {x + o.x, y + o.y}; }
+    Vec2 operator-(const Vec2 &o) const { return {x - o.x, y - o.y}; }
     Vec2 operator*(double k) const { return {x * k, y * k}; }
     bool operator==(const Vec2 &o) const { return x == o.x && y == o.y; }
 };
 
-std::ostream &operator<<(std::ostream &os, const Vec2 &v) {
-    return os << '(' << v.x << ", " << v.y << ')';
-}
+void show(const char *label, const Vec2 &v) { std::printf("%s = (%.1f, %.1f)\\n", label, v.x, v.y); }
 
 int main() {
     Vec2 a{1, 2}, b{3, 4};
-    std::cout << a << " + " << b << " = " << a + b << '\\n';
-    std::cout << a << " * 3 = " << a * 3 << '\\n';
-    std::cout << "equal? " << std::boolalpha << (a == b) << '\\n';
+    show("a + b", a + b);
+    show("b - a", b - a);
+    show("a * 3", a * 3);
+    std::printf("a == b? %s\\n", a == b ? "yes" : "no");
     return 0;
 }
 `,
   },
   {
     category: "Modern C++", title: "Templates",
-    code: `#include <iostream>
-#include <string>
-#include <vector>
+    code: `#include <cstdio>
 
 template <typename T>
 T max_of(const T &a, const T &b) { return a > b ? a : b; }
 
-template <typename T>
+template <typename T, int N>
 class Stack {
 public:
-    void push(T v) { items_.push_back(std::move(v)); }
-    T pop() { T v = std::move(items_.back()); items_.pop_back(); return v; }
-    bool empty() const { return items_.empty(); }
+    bool push(T v) { if (size_ == N) return false; items_[size_++] = v; return true; }
+    bool pop(T &out) { if (size_ == 0) return false; out = items_[--size_]; return true; }
+    int size() const { return size_; }
 private:
-    std::vector<T> items_;
+    T items_[N];
+    int size_ = 0;
 };
 
 int main() {
-    std::cout << max_of(3, 7) << ' ' << max_of(2.5, 1.5) << ' ' << max_of<std::string>("apple", "pear") << '\\n';
+    std::printf("%d %.1f %c\\n", max_of(3, 7), max_of(2.5, 1.5), max_of('a', 'z'));
 
-    Stack<std::string> s;
-    s.push("a"); s.push("b"); s.push("c");
-    while (!s.empty()) std::cout << s.pop() << ' ';
-    std::cout << '\\n';
+    Stack<int, 4> s;
+    for (int i = 1; i <= 5; i++)
+        if (!s.push(i * 10)) std::printf("stack full, dropped %d\\n", i * 10);
+    int v;
+    while (s.pop(v)) std::printf("%d ", v);
+    std::printf("\\n");
     return 0;
 }
 `,
   },
   {
-    category: "Modern C++", title: "Lambdas and std::function",
-    code: `#include <algorithm>
-#include <functional>
-#include <iostream>
-#include <vector>
+    category: "Modern C++", title: "Lambdas",
+    code: `#include <cstdio>
+#include <cstdlib>
+
+template <typename F>
+void repeat(int times, F body) { for (int i = 0; i < times; i++) body(i); }
 
 int main() {
     int factor = 3;
-    auto times = [factor](int x) { return x * factor; };          // capture by value
-    std::cout << "times(7) = " << times(7) << '\\n';
+    auto times = [factor](int x) { return x * factor; };      // capture by value
+    std::printf("times(7) = %d\\n", times(7));
 
-    std::vector<int> v{5, 2, 9, 1, 7};
-    std::sort(v.begin(), v.end(), [](int a, int b) { return a > b; });
-    for (int x : v) std::cout << x << ' ';
-    std::cout << '\\n';
+    int total = 0;
+    repeat(5, [&total](int i) { total += i; });                // capture by reference
+    std::printf("sum 0..4 = %d\\n", total);
 
-    std::function<int(int)> fact = [&](int n) { return n <= 1 ? 1 : n * fact(n - 1); };
-    std::cout << "5! = " << fact(5) << '\\n';
-
-    int count = 0;
-    std::for_each(v.begin(), v.end(), [&count](int x) { if (x > 4) ++count; });  // capture by ref
-    std::cout << count << " values greater than 4\\n";
+    int a[] = {5, 2, 9, 1, 7};
+    std::qsort(a, 5, sizeof a[0], [](const void *x, const void *y) {   // captureless lambda -> function pointer
+        return *static_cast<const int *>(y) - *static_cast<const int *>(x);
+    });
+    for (int v : a) std::printf("%d ", v);
+    std::printf("\\n");
     return 0;
 }
 `,
   },
   {
-    category: "Modern C++", title: "Smart pointers (RAII)",
-    code: `#include <iostream>
-#include <memory>
+    category: "Modern C++", title: "RAII ownership (a unique_ptr you write)",
+    code: `#include <cstdio>
 
 struct Resource {
-    explicit Resource(int id) : id(id) { std::cout << "acquire " << id << '\\n'; }
-    ~Resource() { std::cout << "release " << id << '\\n'; }
+    explicit Resource(int id) : id(id) { std::printf("acquire %d\\n", id); }
+    ~Resource() { std::printf("release %d\\n", id); }
     int id;
 };
 
+// Owns one heap object and frees it automatically; copying is forbidden, moving transfers ownership.
+template <typename T>
+class Owner {
+public:
+    explicit Owner(T *p = nullptr) : p_(p) {}
+    ~Owner() { delete p_; }
+    Owner(const Owner &) = delete;
+    Owner &operator=(const Owner &) = delete;
+    Owner(Owner &&o) noexcept : p_(o.p_) { o.p_ = nullptr; }
+    T *operator->() const { return p_; }
+    explicit operator bool() const { return p_ != nullptr; }
+private:
+    T *p_;
+};
+
 int main() {
     {
-        auto u = std::make_unique<Resource>(1);          // sole owner
-        std::cout << "unique owns " << u->id << '\\n';
-    }                                                    // released here
-
-    auto s1 = std::make_shared<Resource>(2);
-    {
-        auto s2 = s1;                                    // shared owner
-        std::cout << "use_count = " << s1.use_count() << '\\n';
-    }
-    std::cout << "use_count = " << s1.use_count() << '\\n';
-    std::cout << "end of main\\n";
-    return 0;                                            // s1 released here
+        Owner<Resource> a(new Resource(1));
+        std::printf("a owns %d\\n", a->id);
+        Owner<Resource> b(static_cast<Owner<Resource> &&>(a));   // ownership moves to b
+        std::printf("a still owns something? %s\\n", a ? "yes" : "no");
+        std::printf("b owns %d\\n", b->id);
+    }                                                          // b's destructor releases the resource
+    std::printf("end of main\\n");
+    return 0;
 }
 `,
   },
   {
-    category: "Modern C++", title: "Exceptions",
-    code: `#include <iostream>
-#include <stdexcept>
-#include <string>
+    category: "Modern C++", title: "array and optional",
+    code: `#include <array>
+#include <cstdio>
+#include <initializer_list>
+#include <optional>
 
-double divide(double a, double b) {
-    if (b == 0) throw std::invalid_argument("division by zero");
-    return a / b;
+struct MinMax { int lo, hi; };
+
+MinMax min_max(const std::array<int, 5> &a) {
+    int lo = a[0], hi = a[0];
+    for (int v : a) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    return {lo, hi};
+}
+
+std::optional<int> find_index(const std::array<int, 5> &a, int target) {
+    for (int i = 0; i < 5; i++)
+        if (a[i] == target) return i;
+    return std::nullopt;
 }
 
 int main() {
-    try {
-        std::cout << divide(10, 4) << '\\n';
-        std::cout << divide(1, 0) << '\\n';
-    } catch (const std::exception &e) {
-        std::cout << "caught: " << e.what() << '\\n';
-    }
+    std::array<int, 5> nums{42, 7, 19, 88, 3};
+    auto [lo, hi] = min_max(nums);                       // structured bindings
+    std::printf("min=%d max=%d size=%zu\\n", lo, hi, nums.size());
 
-    try {
-        std::string s = "abc";
-        std::cout << s.at(10) << '\\n';
-    } catch (const std::out_of_range &e) {
-        std::cout << "caught out_of_range\\n";
+    for (int target : {19, 100}) {
+        if (auto idx = find_index(nums, target))
+            std::printf("%d found at %d\\n", target, *idx);
+        else
+            std::printf("%d not found\\n", target);
     }
     return 0;
 }
 `,
   },
   {
-    category: "Modern C++", title: "Sorting structs with a comparator",
-    code: `#include <algorithm>
-#include <iostream>
-#include <string>
-#include <vector>
+    category: "Memory", title: "RAII dynamic array",
+    code: `#include <cstdio>
+#include <cstring>
 
-struct Employee {
-    std::string name;
-    int age;
-    double salary;
+class IntArray {
+public:
+    IntArray() : data_(new int[2]), size_(0), cap_(2) {}
+    ~IntArray() { delete[] data_; }
+    IntArray(const IntArray &) = delete;                 // no accidental copies
+    IntArray &operator=(const IntArray &) = delete;
+
+    void push(int v) {
+        if (size_ == cap_) {                              // grow when full
+            int *bigger = new int[cap_ * 2];
+            std::memcpy(bigger, data_, size_ * sizeof(int));
+            delete[] data_;
+            data_ = bigger;
+            cap_ *= 2;
+            std::printf("grew to capacity %d\\n", cap_);
+        }
+        data_[size_++] = v;
+    }
+    int size() const { return size_; }
+    int operator[](int i) const { return data_[i]; }
+
+private:
+    int *data_;
+    int size_, cap_;
 };
 
 int main() {
-    std::vector<Employee> staff{{"Asha", 31, 85000}, {"Ben", 27, 62000}, {"Chen", 45, 120000}, {"Dana", 38, 62000}};
+    IntArray a;
+    for (int i = 1; i <= 10; i++) a.push(i * i);
+    for (int i = 0; i < a.size(); i++) std::printf("%d ", a[i]);
+    std::printf("\\n");
+    return 0;                                             // destructor frees the memory
+}
+`,
+  },
+  {
+    category: "Functions", title: "Recursion and constexpr",
+    code: `#include <cstdio>
 
-    std::sort(staff.begin(), staff.end(), [](const Employee &a, const Employee &b) {
-        if (a.salary != b.salary) return a.salary > b.salary;   // salary desc
-        return a.name < b.name;                                 // then name asc
-    });
+constexpr unsigned long long factorial(int n) { return n <= 1 ? 1 : n * factorial(n - 1); }
+int fib(int n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }
 
-    for (const auto &e : staff)
-        std::cout << e.name << "\\t" << e.age << "\\t" << e.salary << '\\n';
+int main() {
+    static_assert(factorial(5) == 120, "evaluated by the compiler");
+    for (int i = 0; i <= 10; i++)
+        std::printf("%2d! = %llu\\n", i, factorial(i));
+    std::printf("fib:");
+    for (int i = 0; i < 15; i++) std::printf(" %d", fib(i));
+    std::printf("\\n");
     return 0;
 }
 `,

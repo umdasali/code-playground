@@ -8,7 +8,6 @@ import { BookOpen, Database, Eraser, Play, RefreshCw, RotateCcw, Sparkles, Table
 import { Button, cn, SelectBox } from "./ui";
 import SqlResults, { type SqlResult } from "./SqlResults";
 
-type Engine = "browser" | "server";
 type Kind = "ddl" | "dml";
 
 const STARTERS: Record<Kind, string> = {
@@ -30,33 +29,17 @@ const store = {
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} },
 };
 
-function sessionId() {
-  let id = store.get("pg:session");
-  if (!id || !/^[a-f0-9]{32}$/.test(id)) {
-    id = crypto.randomUUID().replaceAll("-", "");
-    store.set("pg:session", id);
-  }
-  return id;
-}
+const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
-const quote = (engine: Engine, name: string) =>
-  engine === "browser" ? `"${name.replaceAll('"', '""')}"` : `\`${name.replaceAll("`", "``")}\``;
-
-async function exec(engine: Engine, query: string): Promise<{ results?: SqlResult[]; error?: string }> {
+async function exec(query: string): Promise<{ results?: SqlResult[]; error?: string }> {
   try {
-    if (engine === "browser") return { results: await runLocal(query) };
-    const res = await fetch("/api/sql", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionId(), query }),
-    });
-    return await res.json();
+    return { results: await runLocal(query) };
   } catch (e) {
-    return { error: (e as Error).message || "Request failed." };
+    return { error: (e as Error).message || "Query failed." };
   }
 }
 
 export default function MySqlWorkspace() {
-  const [engine, setEngine] = useState<Engine>(() => (store.get("pg:engine") === "server" ? "server" : "browser"));
   const [code, setCode] = useState<Record<Kind, string>>(() => ({
     ddl: store.get("pg:code:mysql-ddl") ?? STARTERS.ddl,
     dml: store.get("pg:code:mysql-dml") ?? STARTERS.dml,
@@ -68,26 +51,23 @@ export default function MySqlWorkspace() {
   const [view, setView] = useState<{ schema?: SqlResult; data?: SqlResult; error?: string } | null>(null);
 
   const refreshTables = useCallback(async () => {
-    const q = engine === "browser"
-      ? "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-      : "SHOW TABLES";
-    const r = await exec(engine, q);
+    const r = await exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
     const names = (r.results?.[0]?.rows ?? []).map((row) => String(row[0]));
     setTables(names);
     setSelected((cur) => (cur && names.includes(cur) ? cur : names[0] ?? null));
-  }, [engine]);
+  }, []);
 
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
     (async () => {
-      const q = quote(engine, selected);
-      const schema = await exec(engine, engine === "browser" ? `PRAGMA table_info(${q})` : `DESCRIBE ${q}`);
-      const data = await exec(engine, `SELECT * FROM ${q} LIMIT 100`);
+      const q = quote(selected);
+      const schema = await exec(`PRAGMA table_info(${q})`);
+      const data = await exec(`SELECT * FROM ${q} LIMIT 100`);
       if (!cancelled) setView({ schema: schema.results?.[0], data: data.results?.[0], error: schema.error ?? data.error });
     })();
     return () => { cancelled = true; };
-  }, [selected, engine, tables]);
+  }, [selected, tables]);
 
   useEffect(() => {
     const t = setTimeout(() => void refreshTables(), 0);
@@ -96,21 +76,17 @@ export default function MySqlWorkspace() {
 
   const run = useCallback(async (kind: Kind) => {
     setBusy(true);
-    const r = await exec(engine, code[kind]);
+    const r = await exec(code[kind]);
     setOutput({ label: kind.toUpperCase(), ...r });
     await refreshTables();
     setBusy(false);
-  }, [engine, code, refreshTables]);
+  }, [code, refreshTables]);
 
   const admin = async (action: "seed" | "reset") => {
     setBusy(true);
     let error: string | undefined;
     try {
-      if (engine === "browser") await (action === "seed" ? seedLocal() : resetLocal());
-      else {
-        const res = await fetch("/api/sql", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: sessionId(), action }) });
-        error = (await res.json()).error;
-      }
+      await (action === "seed" ? seedLocal() : resetLocal());
     } catch (e) { error = (e as Error).message; }
     setOutput({ label: action === "seed" ? "Sample data" : "Reset", error, results: error ? undefined : [{ columns: [], rows: [], truncated: false, info: action === "seed" ? `Sample data loaded: ${SAMPLE_TABLES}.` : "Database reset." }] });
     await refreshTables();
@@ -155,11 +131,9 @@ export default function MySqlWorkspace() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-900/40 px-3 py-2">
-        <SelectBox icon={Database} value={engine} aria-label="Database engine"
-          onChange={(e) => { const v = e.target.value as Engine; setEngine(v); store.set("pg:engine", v); setOutput(null); }}>
-          <option value="browser">Browser (SQLite · IndexedDB)</option>
-          <option value="server">Server (MySQL)</option>
-        </SelectBox>
+        <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-800 px-2.5 text-xs text-zinc-400" title="Runs in your browser; tables are saved here until you reset or clear site data">
+          <Database size={14} aria-hidden />SQLite · saved in this browser
+        </span>
         <Button icon={Sparkles} disabled={busy} onClick={() => void admin("seed")} iconOnlyOnSmall title="Load the sample shop and company tables">Load sample data</Button>
         <Button variant="danger" icon={Eraser} disabled={busy} onClick={() => void admin("reset")} iconOnlyOnSmall title="Drop everything and start empty">Reset DB</Button>
         <SelectBox icon={BookOpen} value="" aria-label="Practice queries"

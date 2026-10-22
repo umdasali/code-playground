@@ -3,36 +3,19 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Process } from "@wasmer/sdk";
 import { ChevronRight, ExternalLink, PanelLeftClose, PanelLeftOpen, Play, PlugZap, Search, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COMMANDS, GROUPS, type CommandRef } from "@/lib/commands";
+import { resetShell, startShell } from "@/lib/wasm";
 import { Button, cn } from "./ui";
 
-type Status = "connecting" | "connected" | "ended" | "error";
-
-const store = {
-  get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} },
-};
-
-function termSession() {
-  let id = store.get("pg:term-session");
-  if (!id || !/^[a-f0-9]{32}$/.test(id)) {
-    id = crypto.randomUUID().replaceAll("-", "");
-    store.set("pg:term-session", id);
-  }
-  return id;
-}
-
-const STATUS_LABEL: Record<Status, string> = {
-  connecting: "Connecting…",
-  connected: "Connected",
-  ended: "Shell ended",
-  error: "Cannot reach terminal server",
-};
+type Status = "loading" | "connected" | "ended" | "error";
 
 export default function Terminal({ openInC }: { openInC: (code: string) => void }) {
-  const [status, setStatus] = useState<Status>("connecting");
+  const [status, setStatus] = useState<Status>("loading");
+  const [progress, setProgress] = useState<{ message: string; percent: number | null } | null>({ message: "Starting…", percent: null });
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState<string | null>("ls");
   // On narrow screens the reference is a full-width panel you toggle; on large screens it is always docked.
@@ -40,39 +23,53 @@ export default function Terminal({ openInC }: { openInC: (code: string) => void 
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
-  const ws = useRef<WebSocket | null>(null);
+  const proc = useRef<Process | null>(null);
+  const generation = useRef(0);
+  // A resize sent while bash is still starting up can kill it, so resizes wait for the first output and are debounced.
+  const shellReady = useRef(false);
+  const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
-    ws.current?.close();
-    const port = 3001; // must match PORT in server/terminal-server.mjs
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const sock = new WebSocket(`${proto}://${location.hostname}:${port}/?session=${termSession()}`);
-    ws.current = sock;
-    let opened = false;
-    sock.onopen = () => {
-      opened = true;
+  const start = useCallback(async () => {
+    const t = term.current;
+    if (!t) return;
+    const mine = ++generation.current;
+    proc.current?.kill().catch(() => {});
+    proc.current = null;
+    shellReady.current = false;
+    setStatus("loading");
+    setProgress({ message: "Starting…", percent: null });
+    try {
+      const p = await startShell(t.cols, t.rows, (message, percent) => { if (mine === generation.current) setProgress({ message, percent }); });
+      if (mine !== generation.current) { p.kill().catch(() => {}); return; }
+      proc.current = p;
+      t.reset();
       setStatus("connected");
-      const t = term.current;
-      if (t) {
-        t.reset();
-        sock.send(JSON.stringify({ t: "r", cols: t.cols, rows: t.rows }));
-        t.focus();
-      }
-    };
-    sock.onmessage = (ev) => {
-      const m = JSON.parse(ev.data as string);
-      if (m.t === "o") term.current?.write(m.d);
-      else if (m.t === "exit") setStatus("ended");
-    };
-    sock.onclose = () => {
-      if (ws.current !== sock) return; // replaced by a newer connection
-      setStatus((s) => (s === "ended" ? s : opened ? "ended" : "error"));
-    };
+      setProgress(null);
+      t.focus();
+      const pump = async (stream: AsyncIterable<Uint8Array> | null) => {
+        if (!stream) return;
+        for await (const chunk of stream) {
+          t.write(chunk);
+          if (!shellReady.current && mine === generation.current) {
+            shellReady.current = true;
+            proc.current?.resizeTerminal(t.cols, t.rows); // catch up with any layout change during startup
+          }
+        }
+      };
+      void pump(p.stdout);
+      void pump(p.stderr);
+      void p.wait({ check: false }).then(() => { if (proc.current === p) setStatus("ended"); });
+    } catch (e) {
+      if (mine !== generation.current) return;
+      setError(e instanceof Error ? e.message : String(e));
+      setStatus("error");
+    }
   }, []);
 
   useEffect(() => {
     const t = new XTerm({
       cursorBlink: true, fontSize: 14, scrollback: 5000,
+      convertEol: true, // the WebAssembly TTY emits bare "\n"
       fontFamily: "Menlo, Monaco, Consolas, \"Courier New\", monospace", lineHeight: 1.2,
       theme: { background: "#09090b", foreground: "#e4e4e7", cursor: "#38bdf8", selectionBackground: "#3f3f46" },
     });
@@ -83,35 +80,43 @@ export default function Terminal({ openInC }: { openInC: (code: string) => void 
     term.current = t;
     fit.current = f;
 
-    t.onData((d) => { if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: "i", d })); });
-    t.onResize(({ cols, rows }) => { if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: "r", cols, rows })); });
+    t.onData((d) => { void proc.current?.stdin?.write(d); });
+    t.onResize(({ cols, rows }) => {
+      if (!shellReady.current) return;
+      if (resizeTimer.current) clearTimeout(resizeTimer.current);
+      resizeTimer.current = setTimeout(() => proc.current?.resizeTerminal(cols, rows), 150);
+    });
     const ro = new ResizeObserver(() => { try { f.fit(); } catch {} });
     ro.observe(host.current!);
 
-    connect();
+    const boot = setTimeout(() => void start(), 0);
     return () => {
+      clearTimeout(boot);
       ro.disconnect();
-      const sock = ws.current;
-      ws.current = null;
-      sock?.close();
+      if (resizeTimer.current) clearTimeout(resizeTimer.current);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- a plain counter, not a DOM ref
+      generation.current++;
+      proc.current?.kill().catch(() => {});
+      proc.current = null;
       t.dispose();
     };
-  }, [connect]);
+  }, [start]);
 
   // Typing into the terminal for the user: clear the current input line (Ctrl+U), then run the command.
   const send = (cmd: string) => {
     setRefOpen(false);
-    if (ws.current?.readyState !== WebSocket.OPEN) return;
-    ws.current.send(JSON.stringify({ t: "i", d: `\x15${cmd}\r` }));
+    if (!proc.current?.stdin) return;
+    void proc.current.stdin.write(`\x15${cmd}\r`);
     term.current?.focus();
   };
 
-  const reconnect = () => { setStatus("connecting"); connect(); };
-  const resetFiles = () => {
+  const resetFiles = async () => {
     if (!confirm("Delete your changes and restore the starting files?")) return;
-    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: "reset" }));
-    setStatus("connecting");
-    setTimeout(connect, 400);
+    generation.current++;
+    proc.current?.kill().catch(() => {});
+    proc.current = null;
+    await resetShell();
+    void start();
   };
 
   const groups = useMemo(() => {
@@ -120,7 +125,7 @@ export default function Terminal({ openInC }: { openInC: (code: string) => void 
     return GROUPS.map((g) => [g, list.filter((c) => c.group === g)] as [string, CommandRef[]]).filter(([, l]) => l.length);
   }, [filter]);
 
-  const dot = status === "connected" ? "bg-emerald-500" : status === "connecting" ? "animate-pulse bg-amber-400" : "bg-rose-500";
+  const dot = status === "connected" ? "bg-emerald-500" : status === "loading" ? "animate-pulse bg-amber-400" : "bg-rose-500";
 
   return (
     <div className="relative flex min-h-0 flex-1">
@@ -155,7 +160,12 @@ export default function Terminal({ openInC }: { openInC: (code: string) => void 
                           </span>
                         </button>
                       ))}
-                      {c.c && <Button size="sm" icon={ExternalLink} className="mt-1" onClick={() => openInC(c.c!)}>Open C example in C tab</Button>}
+                      {c.c && (
+                        <Button size="sm" icon={ExternalLink} className="mt-1" onClick={() => openInC(c.c!)}
+                          title={c.cRuns === false ? "WebAssembly has no fork/exec/pipe, so this program cannot run in the browser" : undefined}>
+                          {c.cRuns === false ? "Open C example (reference only)" : "Open C example in C tab"}
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -171,13 +181,23 @@ export default function Terminal({ openInC }: { openInC: (code: string) => void 
             {refOpen ? "Hide commands" : "Commands"}
           </Button>
           <span className={cn("h-2 w-2 rounded-full", dot)} aria-hidden />
-          <span role="status">{STATUS_LABEL[status]}</span>
-          {status === "error" && <span className="hidden text-zinc-500 sm:inline">· start it with <code>npm run dev</code></span>}
+          <span role="status" className="min-w-0 truncate">
+            {status === "loading" && (progress?.message ?? "Starting…")}
+            {status === "connected" && "Connected · files live in this tab until you reload"}
+            {status === "ended" && "Shell ended"}
+            {status === "error" && "Could not start the shell"}
+          </span>
+          {status === "loading" && progress?.percent != null && (
+            <span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-zinc-800" role="progressbar" aria-valuenow={Math.round(progress.percent)}>
+              <span className="block h-full rounded-full bg-sky-500 transition-[width] duration-300" style={{ width: `${progress.percent}%` }} />
+            </span>
+          )}
           <div className="ml-auto flex gap-2">
-            {status !== "connected" && status !== "connecting" && <Button size="sm" variant="primary" icon={PlugZap} onClick={reconnect}>Reconnect</Button>}
-            <Button size="sm" variant="danger" icon={Trash2} onClick={resetFiles} iconOnlyOnSmall title="Restore the starting files">Reset files</Button>
+            {(status === "ended" || status === "error") && <Button size="sm" variant="primary" icon={PlugZap} onClick={() => void start()}>Restart shell</Button>}
+            <Button size="sm" variant="danger" icon={Trash2} onClick={() => void resetFiles()} iconOnlyOnSmall title="Restore the starting files">Reset files</Button>
           </div>
         </div>
+        {status === "error" && <p className="border-b border-rose-900/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">{error}</p>}
         <div className="min-h-0 flex-1 p-2">
           <div ref={host} className="h-full w-full" />
         </div>

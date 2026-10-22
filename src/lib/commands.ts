@@ -5,6 +5,8 @@ export interface CommandRef {
   examples: { cmd: string; note: string }[];
   // System calls are C functions, not shell commands; these ship a C program to try in the C tab.
   c?: string;
+  // false when the C program cannot run in the browser (WebAssembly has no fork/exec/pipe); shown for reading only.
+  cRuns?: boolean;
 }
 
 const HDR = "#include <stdio.h>\n#include <stdlib.h>\n#include <unistd.h>\n#include <sys/wait.h>\n\n";
@@ -44,37 +46,37 @@ export const COMMANDS: CommandRef[] = [
   { name: "diff", group: "Text processing", summary: "Compare files line by line", examples: [{ cmd: "diff a.txt b.txt", note: "normal format" }, { cmd: "diff -u a.txt b.txt", note: "unified format" }] },
 
   // Help & shell
-  { name: "man", group: "Help & shell", summary: "Read a manual page (q to quit)", examples: [{ cmd: "man ls", note: "manual for ls" }, { cmd: "man -k copy", note: "search manual summaries" }] },
+  { name: "man", group: "Help & shell", summary: "Read a manual page (q to quit)", examples: [{ cmd: "man ls", note: "manual for ls" }, { cmd: "man grep", note: "any command, built-in help" }] },
   { name: "clear", group: "Help & shell", summary: "Clear the terminal (also Ctrl+L)", examples: [{ cmd: "clear", note: "wipe the screen" }] },
   { name: "history", group: "Help & shell", summary: "Show commands you typed (↑/↓, Ctrl+R to search)", examples: [{ cmd: "history", note: "numbered list" }, { cmd: "history | tail -5", note: "last five" }] },
   {
     name: "exit", group: "Help & shell", summary: "End the shell / a process with a status code",
-    examples: [{ cmd: "false; echo $?", note: "$? holds the last exit code" }, { cmd: "(exit 3); echo $?", note: "exit a subshell with status 3" }, { cmd: "exit", note: "closes this session (use Reconnect)" }],
+    examples: [{ cmd: "false; echo $?", note: "$? holds the last exit code" }, { cmd: "(exit 3); echo $?", note: "exit a subshell with status 3" }, { cmd: "exit", note: "closes this shell (use Restart shell)" }],
     c: `#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n    printf("about to exit with status 7\\n");\n    exit(7);   // flushes stdio buffers, then ends the process\n}\n// Run it, then in a shell you would see: echo $?  ->  7\n`,
   },
 
   // Permissions
   { name: "chmod", group: "Permissions", summary: "Change file mode (permissions)", examples: [{ cmd: "ls -l scripts/hello.sh && chmod +x scripts/hello.sh && ls -l scripts/hello.sh && scripts/hello.sh", note: "make executable and run" }, { cmd: "chmod 600 notes.txt && ls -l notes.txt", note: "owner read/write only" }, { cmd: "chmod u=rwx,g=rx,o= a.txt && ls -l a.txt", note: "symbolic mode" }] },
-  { name: "chown", group: "Permissions", summary: "Change owner (needs root for other users)", examples: [{ cmd: "chown $(id -un) notes.txt && ls -l notes.txt", note: "to yourself: allowed" }, { cmd: "chown root notes.txt", note: "fails: not permitted" }] },
+  { name: "chown", group: "Permissions", summary: "Change owner (needs root for other users)", examples: [{ cmd: "chown $(id -un) notes.txt && ls -l notes.txt", note: "to yourself: allowed" }, { cmd: "chown root notes.txt", note: "fails: only root may give files away" }] },
   { name: "chgrp", group: "Permissions", summary: "Change group", examples: [{ cmd: "chgrp $(id -gn) notes.txt && ls -l notes.txt", note: "to your own group" }, { cmd: "id", note: "your user and groups" }] },
   { name: "umask", group: "Permissions", summary: "Default permission mask for new files", examples: [{ cmd: "umask", note: "show mask" }, { cmd: "umask 077 && touch private.txt && mkdir pdir && ls -ld private.txt pdir", note: "new files private" }, { cmd: "umask 022 && touch shared.txt && ls -l shared.txt", note: "typical default" }] },
 
   // Processes
-  { name: "ps", group: "Processes", summary: "Snapshot of processes", examples: [{ cmd: "ps", note: "this shell's processes" }, { cmd: "ps aux | head", note: "all processes" }, { cmd: "ps -o pid,ppid,cmd", note: "pick columns" }] },
+  { name: "ps", group: "Processes", summary: "Snapshot of processes", examples: [{ cmd: "ps", note: "this shell's processes" }, { cmd: "ps aux | head", note: "all processes" }, { cmd: "ps -ef", note: "full format" }] },
   { name: "top", group: "Processes", summary: "Live process view (q to quit)", examples: [{ cmd: "top", note: "interactive; press q to leave" }, { cmd: "top -b -n 1 | head -15", note: "one snapshot (Linux)" }] },
-  { name: "kill", group: "Processes", summary: "Send a signal to a process", examples: [{ cmd: "sleep 100 & sleep 0.2; ps; kill %1; sleep 0.2; ps", note: "start in background, kill job %1, see it gone" }, { cmd: "kill -l", note: "list signals" }] },
+  { name: "kill", group: "Processes", summary: "Send a signal to a process (simulated in this sandbox)", examples: [{ cmd: "sleep 100 & ps; kill $!; ps", note: "start a background job, list it, kill it ($! = its PID), list again" }, { cmd: "kill -l", note: "list signals" }] },
 
   // Process system calls (C)
   {
-    name: "fork", group: "Process system calls (C)", summary: "Create a child process", examples: [{ cmd: "(echo \"subshell pid: $BASHPID\") ; echo \"shell pid: $$\"", note: "a ( ) subshell is a forked child" }],
+    name: "fork", group: "Process system calls (C)", cRuns: false, summary: "Create a child process", examples: [{ cmd: "(echo \"subshell pid: $BASHPID\") ; echo \"shell pid: $$\"", note: "a ( ) subshell is a forked child" }],
     c: `${HDR}int main(void) {\n    pid_t pid = fork();\n    if (pid < 0) { perror("fork"); return 1; }\n    if (pid == 0) {\n        printf("child:  pid=%d parent=%d\\n", getpid(), getppid());\n    } else {\n        printf("parent: pid=%d child=%d\\n", getpid(), pid);\n        wait(NULL);\n    }\n    return 0;\n}\n`,
   },
   {
-    name: "exec", group: "Process system calls (C)", summary: "Replace the process image with a new program", examples: [{ cmd: "bash -c 'echo before; exec echo replaced; echo never printed'", note: "the shell builtin: nothing runs after exec" }],
+    name: "exec", group: "Process system calls (C)", cRuns: false, summary: "Replace the process image with a new program", examples: [{ cmd: "bash -c 'echo before; exec echo replaced; echo never printed'", note: "the shell builtin: nothing runs after exec" }],
     c: `${HDR}int main(void) {\n    printf("before exec, pid=%d\\n", getpid());\n    execlp("ls", "ls", "-l", "/", (char *)NULL);\n    perror("execlp");   // only reached if exec failed\n    return 1;\n}\n`,
   },
   {
-    name: "wait", group: "Process system calls (C)", summary: "Wait for a child and read its exit status", examples: [{ cmd: "sleep 2 & wait; echo \"child finished: $?\"", note: "the shell builtin: blocks until background jobs end" }],
+    name: "wait", group: "Process system calls (C)", cRuns: false, summary: "Wait for a child and read its exit status", examples: [{ cmd: "sleep 2 & wait; echo \"child finished: $?\"", note: "the shell builtin: blocks until background jobs end" }],
     c: `${HDR}int main(void) {\n    pid_t pid = fork();\n    if (pid == 0) { sleep(1); exit(42); }\n    int status;\n    pid_t done = wait(&status);\n    if (WIFEXITED(status))\n        printf("child %d exited with %d\\n", done, WEXITSTATUS(status));\n    return 0;\n}\n`,
   },
   {
@@ -86,14 +88,14 @@ export const COMMANDS: CommandRef[] = [
     c: `${HDR}int main(void) {\n    printf("pid=%d  ppid=%d\\n", getpid(), getppid());\n    return 0;\n}\n`,
   },
   {
-    name: "pipe", group: "Process system calls (C)", summary: "Create a one-way channel between processes (like | in the shell)", examples: [{ cmd: "cat notes.txt | grep fox | wc -l", note: "the shell's version" }],
+    name: "pipe", group: "Process system calls (C)", cRuns: false, summary: "Create a one-way channel between processes (like | in the shell)", examples: [{ cmd: "cat notes.txt | grep fox | wc -l", note: "the shell's version" }],
     c: `${HDR}#include <string.h>\n\nint main(void) {\n    int fd[2];\n    if (pipe(fd) < 0) { perror("pipe"); return 1; }\n    if (fork() == 0) {            // child writes\n        close(fd[0]);\n        const char *msg = "hello through the pipe";\n        write(fd[1], msg, strlen(msg) + 1);\n        _exit(0);\n    }\n    close(fd[1]);                 // parent reads\n    char buf[64];\n    read(fd[0], buf, sizeof buf);\n    printf("parent got: %s\\n", buf);\n    wait(NULL);\n    return 0;\n}\n`,
   },
 
   // Archive & disk
   { name: "tar", group: "Archive & disk", summary: "Bundle and compress files", examples: [{ cmd: "tar -czf docs.tar.gz docs && ls -l docs.tar.gz", note: "create gzip archive" }, { cmd: "tar -tzf docs.tar.gz", note: "list contents" }, { cmd: "mkdir out && tar -xzf docs.tar.gz -C out && ls -R out", note: "extract into out/" }] },
-  { name: "df", group: "Archive & disk", summary: "Free space on filesystems", examples: [{ cmd: "df -h", note: "human-readable" }, { cmd: "df -h .", note: "just this directory's filesystem" }] },
-  { name: "du", group: "Archive & disk", summary: "Space used by files", examples: [{ cmd: "du -sh .", note: "total size" }, { cmd: "du -h docs projects", note: "per-directory sizes" }, { cmd: "du -a | sort -rn | head -5", note: "biggest entries" }] },
+  { name: "df", group: "Archive & disk", summary: "Free space on filesystems (simulated)", examples: [{ cmd: "df -h", note: "human-readable" }, { cmd: "df -h .", note: "just this directory's filesystem" }] },
+  { name: "du", group: "Archive & disk", summary: "Space used by files (estimated)", examples: [{ cmd: "du -sh .", note: "total size" }, { cmd: "du -h docs projects", note: "per-directory sizes" }, { cmd: "du -a | sort -rn | head -5", note: "biggest entries" }] },
 ];
 
 export const GROUPS = [...new Set(COMMANDS.map((c) => c.group))];

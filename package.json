@@ -3,26 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "postinstall": "node scripts/copy-wasmer.mjs",
+    "predev": "node scripts/copy-wasmer.mjs",
+    "dev": "next dev",
+    "prebuild": "node scripts/copy-wasmer.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "dev:next": "next dev",
-    "terminal": "node server/terminal-server.mjs"
+    "lint": "eslint"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@wasmer/sdk": "^0.19.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "lucide-react": "^1.61.0",
-    "mysql2": "^3.24.6",
     "next": "16.4.2",
-    "node-pty": "^1.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1",
-    "sql.js": "^1.15.1",
-    "ws": "^8.22.0"
+    "sql.js": "^1.15.1"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

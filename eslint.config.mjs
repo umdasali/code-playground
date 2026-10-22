@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated copy of the Wasmer SDK (scripts/copy-wasmer.mjs).
+    "public/wasmer-sdk/**",
   ]),
 ]);
 

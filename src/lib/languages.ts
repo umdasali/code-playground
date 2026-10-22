@@ -24,14 +24,21 @@ int main(void) {
     id: "cpp",
     label: "C++",
     monaco: "cpp",
-    starter: `#include <iostream>
-#include <vector>
+    starter: `#include <cstdio>
+
+struct Point {
+    double x, y;
+    Point operator+(const Point &o) const { return {x + o.x, y + o.y}; }
+};
+
+template <typename T>
+T square(T v) { return v * v; }
 
 int main() {
-    std::vector<int> v{1, 2, 3};
-    int sum = 0;
-    for (int x : v) sum += x;
-    std::cout << "Hello from C++! sum=" << sum << "\\n";
+    Point p = Point{1.5, 2.0} + Point{2.5, 1.0};
+    auto twice = [](int n) { return n * 2; };
+    std::printf("p = (%.1f, %.1f)\\n", p.x, p.y);
+    std::printf("square(7) = %d, twice(21) = %d\\n", square(7), twice(21));
     return 0;
 }
 `,
@@ -63,7 +70,7 @@ uname -a
   },
   {
     id: "mysql",
-    label: "MySQL",
+    label: "SQL",
     monaco: "sql",
     starter: `-- Click "Load sample data" to get shop tables, then try:
 SELECT c.name, COUNT(o.id) AS orders
