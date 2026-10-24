@@ -1,0 +1,15 @@
+// Lightweight <numeric> for the in-browser playground.
+#pragma once
+#include <iosfwd>  // defines the libc++ namespace macros
+#include <cstddef>
+
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+template <typename It, typename T> T accumulate(It a, It b, T init) { for (; a != b; ++a) init = init + *a; return init; }
+template <typename It, typename T, typename F> T accumulate(It a, It b, T init, F f) { for (; a != b; ++a) init = f(init, *a); return init; }
+template <typename It, typename T> void iota(It a, It b, T v) { for (; a != b; ++a, ++v) *a = v; }
+template <typename It1, typename It2, typename T> T inner_product(It1 a, It1 b, It2 c, T init) { for (; a != b; ++a, ++c) init = init + (*a) * (*c); return init; }
+template <typename T> constexpr T gcd(T a, T b) { while (b) { T t = a % b; a = b; b = t; } return a < 0 ? -a : a; }
+template <typename T> constexpr T lcm(T a, T b) { return (a == 0 || b == 0) ? 0 : (a / gcd(a, b)) * b; }
+
+_LIBCPP_END_NAMESPACE_STD

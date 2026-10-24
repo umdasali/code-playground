@@ -47,11 +47,16 @@ async function save(bytes: Uint8Array | null): Promise<void> {
 }
 
 let sqlJs: Promise<SqlJsStatic> | null = null;
+
+// The shared SQLite-in-WebAssembly module; the MariaDB practice tab opens its own in-memory databases from it.
+export function loadSqlJs(): Promise<SqlJsStatic> {
+  sqlJs ??= import("sql.js").then((m) => (m.default ?? m)({ locateFile: () => "/sql-wasm.wasm" }));
+  return sqlJs;
+}
 let current: Promise<Database> | null = null;
 
 async function open(): Promise<Database> {
-  sqlJs ??= import("sql.js").then((m) => (m.default ?? m)({ locateFile: () => "/sql-wasm.wasm" }));
-  const SQL = await sqlJs;
+  const SQL = await loadSqlJs();
   const saved = await load().catch(() => undefined);
   return new SQL.Database(saved);
 }

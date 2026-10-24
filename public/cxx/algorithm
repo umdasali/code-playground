@@ -1,0 +1,102 @@
+// Lightweight <algorithm> for the in-browser playground (the real libc++ <algorithm> cannot be compiled there).
+#pragma once
+#include <iosfwd>  // defines the libc++ namespace macros
+#include <cstddef>
+#include <initializer_list>
+#include <iterator>
+#include <type_traits>
+#include <utility>
+
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+template <typename T> constexpr const T &min(const T &a, const T &b) { return b < a ? b : a; }
+template <typename T> constexpr const T &max(const T &a, const T &b) { return a < b ? b : a; }
+template <typename T, typename C> constexpr const T &min(const T &a, const T &b, C c) { return c(b, a) ? b : a; }
+template <typename T, typename C> constexpr const T &max(const T &a, const T &b, C c) { return c(a, b) ? b : a; }
+template <typename T> constexpr T min(initializer_list<T> il) { const T *m = il.begin(); for (const T *p = il.begin() + 1; p != il.end(); ++p) if (*p < *m) m = p; return *m; }
+template <typename T> constexpr T max(initializer_list<T> il) { const T *m = il.begin(); for (const T *p = il.begin() + 1; p != il.end(); ++p) if (*m < *p) m = p; return *m; }
+template <typename T> constexpr const T &clamp(const T &v, const T &lo, const T &hi) { return v < lo ? lo : hi < v ? hi : v; }
+
+
+template <typename It, typename F> F for_each(It a, It b, F f) { for (; a != b; ++a) f(*a); return f; }
+template <typename It, typename T> It find(It a, It b, const T &v) { for (; a != b; ++a) if (*a == v) return a; return b; }
+template <typename It, typename P> It find_if(It a, It b, P p) { for (; a != b; ++a) if (p(*a)) return a; return b; }
+template <typename It, typename T> ptrdiff_t count(It a, It b, const T &v) { ptrdiff_t n = 0; for (; a != b; ++a) if (*a == v) n++; return n; }
+template <typename It, typename P> ptrdiff_t count_if(It a, It b, P p) { ptrdiff_t n = 0; for (; a != b; ++a) if (p(*a)) n++; return n; }
+template <typename It, typename P> bool any_of(It a, It b, P p) { return find_if(a, b, p) != b; }
+template <typename It, typename P> bool all_of(It a, It b, P p) { for (; a != b; ++a) if (!p(*a)) return false; return true; }
+template <typename It, typename P> bool none_of(It a, It b, P p) { return !any_of(a, b, p); }
+template <typename It, typename T> void fill(It a, It b, const T &v) { for (; a != b; ++a) *a = v; }
+template <typename In, typename Out> Out copy(In a, In b, Out o) { for (; a != b; ++a, ++o) *o = *a; return o; }
+template <typename In, typename Out, typename F> Out transform(In a, In b, Out o, F f) { for (; a != b; ++a, ++o) *o = f(*a); return o; }
+template <typename It> void reverse(It a, It b) { while (a != b && a != --b) { swap(*a, *b); ++a; } }
+template <typename It> It max_element(It a, It b) { It m = a; if (a == b) return b; for (++a; a != b; ++a) if (*m < *a) m = a; return m; }
+template <typename It> It min_element(It a, It b) { It m = a; if (a == b) return b; for (++a; a != b; ++a) if (*a < *m) m = a; return m; }
+template <typename It, typename C> It max_element(It a, It b, C c) { It m = a; if (a == b) return b; for (++a; a != b; ++a) if (c(*m, *a)) m = a; return m; }
+template <typename It, typename C> It min_element(It a, It b, C c) { It m = a; if (a == b) return b; for (++a; a != b; ++a) if (c(*a, *m)) m = a; return m; }
+template <typename It, typename P> It remove_if(It a, It b, P p) { It o = a; for (; a != b; ++a) if (!p(*a)) { if (o != a) *o = static_cast<remove_reference_t<decltype(*a)> &&>(*a); ++o; } return o; }
+template <typename It, typename T> It remove(It a, It b, const T &v) { return remove_if(a, b, [&](const auto &x) { return x == v; }); }
+template <typename It> It unique(It a, It b) { if (a == b) return b; It o = a; while (++a != b) if (!(*o == *a)) *++o = static_cast<remove_reference_t<decltype(*a)> &&>(*a); return ++o; }
+template <typename It> bool is_sorted(It a, It b) { if (a == b) return true; for (It n = a; ++n != b; a = n) if (*n < *a) return false; return true; }
+template <typename It, typename T> It lower_bound(It a, It b, const T &v) { ptrdiff_t n = b - a; while (n > 0) { ptrdiff_t h = n / 2; It m = a + h; if (*m < v) { a = m + 1; n -= h + 1; } else n = h; } return a; }
+template <typename It, typename T> It upper_bound(It a, It b, const T &v) { ptrdiff_t n = b - a; while (n > 0) { ptrdiff_t h = n / 2; It m = a + h; if (!(v < *m)) { a = m + 1; n -= h + 1; } else n = h; } return a; }
+template <typename It, typename T> bool binary_search(It a, It b, const T &v) { It i = lower_bound(a, b, v); return i != b && !(v < *i); }
+
+namespace pg_detail {
+template <typename It, typename C> void insertion_sort(It a, It b, C &cmp) {
+  for (It i = a; i != b; ++i) {
+    auto v = static_cast<remove_reference_t<decltype(*i)> &&>(*i);
+    It j = i;
+    while (j != a && cmp(v, *(j - 1))) { *j = static_cast<remove_reference_t<decltype(*j)> &&>(*(j - 1)); --j; }
+    *j = static_cast<decltype(v) &&>(v);
+  }
+}
+template <typename It, typename C> void sift_down(It a, ptrdiff_t i, ptrdiff_t n, C &cmp) {
+  for (;;) {
+    ptrdiff_t l = 2 * i + 1, big = i;
+    if (l < n && cmp(a[big], a[l])) big = l;
+    if (l + 1 < n && cmp(a[big], a[l + 1])) big = l + 1;
+    if (big == i) return;
+    swap(a[i], a[big]);
+    i = big;
+  }
+}
+template <typename It, typename C> void heap_sort(It a, It b, C &cmp) {
+  ptrdiff_t n = b - a;
+  for (ptrdiff_t i = n / 2 - 1; i >= 0; i--) sift_down(a, i, n, cmp);
+  for (ptrdiff_t e = n - 1; e > 0; e--) { swap(a[0], a[e]); sift_down(a, 0, e, cmp); }
+}
+template <typename It, typename C> void intro_sort(It a, It b, C &cmp, int depth) {
+  while (b - a > 16) {
+    if (depth-- == 0) { heap_sort(a, b, cmp); return; }
+    It mid = a + (b - a) / 2, last = b - 1;
+    if (cmp(*mid, *a)) swap(*mid, *a);
+    if (cmp(*last, *a)) swap(*last, *a);
+    if (cmp(*last, *mid)) swap(*last, *mid);
+    swap(*mid, *(b - 2));  // median of three, parked next to the end as the pivot
+    It pivot = b - 2, i = a, j = pivot;
+    for (;;) {
+      while (cmp(*++i, *pivot)) {}
+      while (cmp(*pivot, *--j)) {}
+      if (i >= j) break;
+      swap(*i, *j);
+    }
+    swap(*i, *pivot);
+    intro_sort(a, i, cmp, depth);
+    a = i + 1;
+  }
+  insertion_sort(a, b, cmp);
+}
+struct less_t { template <typename X, typename Y> bool operator()(const X &x, const Y &y) const { return x < y; } };
+}  // namespace pg_detail
+
+template <typename It, typename C> void sort(It a, It b, C cmp) {
+  int depth = 0;
+  for (ptrdiff_t n = b - a; n > 1; n >>= 1) depth += 2;
+  pg_detail::intro_sort(a, b, cmp, depth);
+}
+template <typename It> void sort(It a, It b) { sort(a, b, pg_detail::less_t()); }
+template <typename It, typename C> void stable_sort(It a, It b, C cmp) { pg_detail::insertion_sort(a, b, cmp); }
+template <typename It> void stable_sort(It a, It b) { stable_sort(a, b, pg_detail::less_t()); }
+
+_LIBCPP_END_NAMESPACE_STD

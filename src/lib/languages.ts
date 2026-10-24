@@ -1,4 +1,4 @@
-export type TabId = "c" | "cpp" | "bash" | "terminal" | "mysql" | "web";
+export type TabId = "c" | "cpp" | "bash" | "terminal" | "mysql" | "web" | "network" | "mariadb";
 
 export interface TabConfig {
   id: TabId;
@@ -24,7 +24,9 @@ int main(void) {
     id: "cpp",
     label: "C++",
     monaco: "cpp",
-    starter: `#include <cstdio>
+    starter: `#include <iostream>
+#include <string>
+#include <vector>
 
 struct Point {
     double x, y;
@@ -37,8 +39,12 @@ T square(T v) { return v * v; }
 int main() {
     Point p = Point{1.5, 2.0} + Point{2.5, 1.0};
     auto twice = [](int n) { return n * 2; };
-    std::printf("p = (%.1f, %.1f)\\n", p.x, p.y);
-    std::printf("square(7) = %d, twice(21) = %d\\n", square(7), twice(21));
+    std::vector<std::string> words = {"Hello", "from", "C++!"};
+
+    for (const std::string &w : words) std::cout << w << ' ';
+    std::cout << "\\n";
+    std::cout << "p = (" << p.x << ", " << p.y << ")\\n";
+    std::cout << "square(7) = " << square(7) << ", twice(21) = " << twice(21) << "\\n";
     return 0;
 }
 `,
@@ -66,6 +72,18 @@ uname -a
     id: "web",
     label: "HTML/CSS/JS",
     monaco: "html",
+    starter: "",
+  },
+  {
+    id: "mariadb",
+    label: "MariaDB",
+    monaco: "sql",
+    starter: "",
+  },
+  {
+    id: "network",
+    label: "Network",
+    monaco: "plaintext",
     starter: "",
   },
   {

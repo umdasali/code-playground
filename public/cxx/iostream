@@ -1,0 +1,174 @@
+// Lightweight <iostream> for the in-browser playground (the real libc++ <iostream> cannot be compiled there).
+// Output goes through C stdio, so it interleaves correctly with printf.
+#pragma once
+#include <iosfwd>
+#include <cstdio>
+#include <cstdlib>
+#include <cctype>
+#include <cstring>
+#include <string>
+
+// std::ostream / std::istream are already declared by libc++'s <iosfwd> (as basic_ostream<char> / basic_istream<char>),
+// so the playground's implementations are explicit specializations of those.
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+template <>
+class basic_ostream<char, char_traits<char>> {
+  FILE *f_;
+  int prec_ = 6, width_ = 0;
+  bool fixed_ = false, left_ = false, boolalpha_ = false;
+  char fill_ = ' ';
+
+ public:
+  explicit basic_ostream(FILE *f) : f_(f) {}
+
+  ostream &put_text(const char *s, size_t n) {
+    for (size_t pad = (size_t)width_ > n ? (size_t)width_ - n : 0; !left_ && pad; pad--) fputc(fill_, f_);
+    fwrite(s, 1, n, f_);
+    for (size_t pad = (size_t)width_ > n ? (size_t)width_ - n : 0; left_ && pad; pad--) fputc(fill_, f_);
+    width_ = 0;  // setw only applies to the next item
+    return *this;
+  }
+  ostream &put(char c) { fputc(c, f_); return *this; }
+  ostream &write(const char *s, size_t n) { fwrite(s, 1, n, f_); return *this; }
+  ostream &flush() { fflush(f_); return *this; }
+
+  ostream &operator<<(const char *s) { return put_text(s, strlen(s)); }
+  ostream &operator<<(const string &s) { return put_text(s.data(), s.size()); }
+  ostream &operator<<(char c) { return put_text(&c, 1); }
+  ostream &operator<<(signed char c) { return put_text(reinterpret_cast<char *>(&c), 1); }
+  ostream &operator<<(unsigned char c) { return put_text(reinterpret_cast<char *>(&c), 1); }
+  ostream &operator<<(bool b) {
+    if (boolalpha_) return *this << (b ? "true" : "false");
+    return *this << (int)b;
+  }
+  ostream &operator<<(short v) { return *this << (long long)v; }
+  ostream &operator<<(unsigned short v) { return *this << (unsigned long long)v; }
+  ostream &operator<<(int v) { return *this << (long long)v; }
+  ostream &operator<<(unsigned v) { return *this << (unsigned long long)v; }
+  ostream &operator<<(long v) { return *this << (long long)v; }
+  ostream &operator<<(unsigned long v) { return *this << (unsigned long long)v; }
+  ostream &operator<<(long long v) { char b[32]; return put_text(b, (size_t)snprintf(b, sizeof b, "%lld", v)); }
+  ostream &operator<<(unsigned long long v) { char b[32]; return put_text(b, (size_t)snprintf(b, sizeof b, "%llu", v)); }
+  ostream &operator<<(double v) {
+    char b[400];
+    int n = fixed_ ? snprintf(b, sizeof b, "%.*f", prec_, v) : snprintf(b, sizeof b, "%.*g", prec_, v);
+    return put_text(b, (size_t)n);
+  }
+  ostream &operator<<(float v) { return *this << (double)v; }
+  ostream &operator<<(long double v) { return *this << (double)v; }
+  ostream &operator<<(const void *p) { char b[32]; return put_text(b, (size_t)snprintf(b, sizeof b, "%p", p)); }
+  ostream &operator<<(decltype(nullptr)) { return *this << "nullptr"; }
+  ostream &operator<<(ostream &(*manip)(ostream &)) { return manip(*this); }
+
+  // used by <iomanip> and the flag manipulators
+  void set_precision(int p) { prec_ = p; }
+  void set_width(int w) { width_ = w; }
+  void set_fill(char c) { fill_ = c; }
+  void set_fixed(bool v) { fixed_ = v; }
+  void set_left(bool v) { left_ = v; }
+  void set_boolalpha(bool v) { boolalpha_ = v; }
+  int precision() const { return prec_; }
+};
+
+template <>
+class basic_istream<char, char_traits<char>> {
+  FILE *f_;
+  bool fail_ = false, eof_ = false;
+  size_t last_ = 0;
+
+  void skip_ws() { int c; while ((c = fgetc(f_)) != EOF && isspace(c)) {} if (c == EOF) { eof_ = true; fail_ = true; } else ungetc(c, f_); }
+  bool token(string &out) {
+    out.clear();
+    skip_ws();
+    if (fail_) return false;
+    int c;
+    while ((c = fgetc(f_)) != EOF && !isspace(c)) out.push_back((char)c);
+    if (c == EOF) eof_ = true; else ungetc(c, f_);
+    return true;
+  }
+
+ public:
+  explicit basic_istream(FILE *f) : f_(f) {}
+
+  explicit operator bool() const { return !fail_; }
+  bool operator!() const { return fail_; }
+  bool fail() const { return fail_; }
+  bool eof() const { return eof_; }
+  bool good() const { return !fail_; }
+  void clear() { fail_ = false; eof_ = false; }
+  size_t gcount() const { return last_; }
+
+  int get() { int c = fgetc(f_); if (c == EOF) { eof_ = true; fail_ = true; } return c; }
+  istream &get(char &c) { int v = get(); if (v != EOF) c = (char)v; return *this; }
+  int peek() { int c = fgetc(f_); if (c != EOF) ungetc(c, f_); return c; }
+  istream &ignore(size_t n = 1, int delim = EOF) {
+    int c;
+    while (n-- && (c = fgetc(f_)) != EOF) if (c == delim) break;
+    return *this;
+  }
+
+  istream &operator>>(string &s) { token(s); return *this; }
+  istream &operator>>(char &c) { skip_ws(); if (!fail_) c = (char)fgetc(f_); return *this; }
+  istream &operator>>(int &v) { long long t; *this >> t; if (!fail_) v = (int)t; return *this; }
+  istream &operator>>(unsigned &v) { unsigned long long t; *this >> t; if (!fail_) v = (unsigned)t; return *this; }
+  istream &operator>>(long &v) { long long t; *this >> t; if (!fail_) v = (long)t; return *this; }
+  istream &operator>>(unsigned long &v) { unsigned long long t; *this >> t; if (!fail_) v = (unsigned long)t; return *this; }
+  istream &operator>>(long long &v) {
+    string t;
+    if (!token(t)) return *this;
+    char *end;
+    v = strtoll(t.c_str(), &end, 10);
+    if (end == t.c_str()) fail_ = true;
+    return *this;
+  }
+  istream &operator>>(unsigned long long &v) {
+    string t;
+    if (!token(t)) return *this;
+    char *end;
+    v = strtoull(t.c_str(), &end, 10);
+    if (end == t.c_str()) fail_ = true;
+    return *this;
+  }
+  istream &operator>>(double &v) {
+    string t;
+    if (!token(t)) return *this;
+    char *end;
+    v = strtod(t.c_str(), &end);
+    if (end == t.c_str()) fail_ = true;
+    return *this;
+  }
+  istream &operator>>(float &v) { double t; *this >> t; if (!fail_) v = (float)t; return *this; }
+};
+
+inline ostream cout(stdout);
+inline ostream cerr(stderr);
+inline ostream clog(stderr);
+inline istream cin(stdin);
+
+inline ostream &endl(ostream &os) { os.put('\n'); return os.flush(); }
+inline ostream &ends(ostream &os) { return os.put('\0'); }
+inline ostream &flush(ostream &os) { return os.flush(); }
+inline ostream &fixed(ostream &os) { os.set_fixed(true); return os; }
+inline ostream &defaultfloat(ostream &os) { os.set_fixed(false); return os; }
+inline ostream &left(ostream &os) { os.set_left(true); return os; }
+inline ostream &right(ostream &os) { os.set_left(false); return os; }
+inline ostream &boolalpha(ostream &os) { os.set_boolalpha(true); return os; }
+inline ostream &noboolalpha(ostream &os) { os.set_boolalpha(false); return os; }
+
+inline istream &getline(istream &is, string &s, char delim = '\n') {
+  s.clear();
+  int c;
+  bool any = false;
+  while ((c = is.get()) != EOF) {
+    any = true;
+    if (c == delim) return is;
+    s.push_back((char)c);
+  }
+  if (any) is.clear();  // last line without a trailing newline still counts
+  return is;
+}
+
+inline istream &ws(istream &is) { while (is.peek() != EOF && isspace(is.peek())) is.get(); return is; }
+
+_LIBCPP_END_NAMESPACE_STD

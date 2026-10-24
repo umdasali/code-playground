@@ -716,4 +716,124 @@ int main() {
 }
 `,
   },
+  {
+    category: "Input and output", title: "Streams: cin and cout", stdin: "Asha 31 1.68",
+    code: `#include <iomanip>
+#include <iostream>
+#include <string>
+
+int main() {
+    std::string name;
+    int age;
+    double height;
+    std::cout << "Name, age and height? ";
+    std::cin >> name >> age >> height;
+
+    std::cout << "Hello, " << name << "!" << std::endl;
+    std::cout << "In 10 years you will be " << age + 10 << ".\\n";
+    std::cout << std::fixed << std::setprecision(1) << "Height: " << height << " m\\n";
+    std::cout << std::setw(8) << "item" << std::setw(8) << "qty" << "\\n";
+    std::cout << std::setw(8) << "pens" << std::setw(8) << 12 << "\\n";
+    return 0;
+}
+`,
+  },
+  {
+    category: "Containers", title: "vector and algorithms",
+    code: `#include <algorithm>
+#include <iostream>
+#include <numeric>
+#include <string>
+#include <vector>
+
+int main() {
+    std::vector<int> nums = {42, 7, 19, 3, 88, 25};
+    nums.push_back(61);
+
+    std::sort(nums.begin(), nums.end());
+    std::cout << "sorted:";
+    for (int n : nums) std::cout << ' ' << n;
+    std::cout << "\\n";
+
+    std::cout << "sum = " << std::accumulate(nums.begin(), nums.end(), 0) << "\\n";
+    std::cout << "max = " << *std::max_element(nums.begin(), nums.end()) << "\\n";
+    std::cout << "evens = " << std::count_if(nums.begin(), nums.end(), [](int n) { return n % 2 == 0; }) << "\\n";
+
+    std::vector<std::string> words = {"pear", "apple", "fig", "banana"};
+    std::sort(words.begin(), words.end(), [](const std::string &a, const std::string &b) { return a.size() < b.size(); });
+    for (const std::string &w : words) std::cout << w << " (" << w.size() << ")\\n";
+    return 0;
+}
+`,
+  },
+  {
+    category: "Modern C++", title: "unique_ptr and shared_ptr",
+    code: `#include <iostream>
+#include <memory>
+#include <vector>
+
+struct Shape {
+    virtual ~Shape() { std::cout << "  ~Shape\\n"; }
+    virtual double area() const = 0;
+};
+struct Square : Shape {
+    explicit Square(double s) : side(s) {}
+    double area() const override { return side * side; }
+    double side;
+};
+struct Circle : Shape {
+    explicit Circle(double r) : radius(r) {}
+    double area() const override { return 3.14159 * radius * radius; }
+    double radius;
+};
+
+int main() {
+    std::vector<std::unique_ptr<Shape>> shapes;
+    shapes.push_back(std::make_unique<Square>(3));
+    shapes.push_back(std::make_unique<Circle>(2));
+    for (const auto &s : shapes) std::cout << "area " << s->area() << "\\n";
+
+    auto shared = std::make_shared<Square>(5);
+    std::cout << "owners: " << shared.use_count() << "\\n";
+    {
+        std::shared_ptr<Square> other = shared;
+        std::cout << "owners: " << shared.use_count() << "\\n";
+    }
+    std::cout << "owners: " << shared.use_count() << "\\n";
+    std::cout << "end of main, everything is freed automatically\\n";
+    return 0;
+}
+`,
+  },
+  {
+    category: "Strings", title: "std::string", stdin: "level",
+    code: `#include <algorithm>
+#include <cctype>
+#include <iostream>
+#include <string>
+
+bool is_palindrome(const std::string &s) {
+    std::string r = s;
+    std::reverse(r.begin(), r.end());
+    return r == s;
+}
+
+int main() {
+    std::string line;
+    std::getline(std::cin, line);
+
+    std::string upper = line;
+    for (char &c : upper) c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+
+    std::cout << "you typed:  " << line << "\\n";
+    std::cout << "uppercase:  " << upper << "\\n";
+    std::cout << "length:     " << line.size() << "\\n";
+    std::cout << "palindrome: " << (is_palindrome(line) ? "yes" : "no") << "\\n";
+
+    std::string greeting = "Hello, " + line + "!";
+    std::cout << greeting << " (first space at " << greeting.find(' ') << ")\\n";
+    return 0;
+}
+`,
+  },
 ];

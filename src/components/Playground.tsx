@@ -1,12 +1,14 @@
 "use client";
 
 import Editor from "@monaco-editor/react";
-import { CheckCircle2, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, type LucideIcon } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, DatabaseZap, Network, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { C_EXAMPLES, CPP_EXAMPLES, type Example } from "@/lib/examples";
 import { TABS, type TabId } from "@/lib/languages";
-import { CXX_LIMIT_NOTE, runBash, runNative, type RunResult } from "@/lib/wasm";
+import { CXX_MISSING, CXX_SUPPORTED, runBash, runNative, type RunResult } from "@/lib/wasm";
+import MariaDbLab from "./MariaDbLab";
 import MySqlWorkspace from "./MySqlWorkspace";
+import NetworkLab from "./NetworkLab";
 import Terminal from "./Terminal";
 import { Button, cn, ExamplesMenu } from "./ui";
 import WebPlayground from "./WebPlayground";
@@ -17,6 +19,8 @@ const TAB_ICONS: Record<TabId, LucideIcon> = {
   bash: SquareTerminal,
   terminal: TerminalIcon,
   web: Globe,
+  network: Network,
+  mariadb: DatabaseZap,
   mysql: Database,
 };
 
@@ -69,7 +73,7 @@ export default function Playground() {
     }
   }, [tab, code, stdin]);
 
-  const custom = tab === "mysql" || tab === "terminal" || tab === "web";
+  const custom = tab === "mysql" || tab === "terminal" || tab === "web" || tab === "network" || tab === "mariadb";
   const openInC = (src: string) => {
     setCodes((c) => ({ ...c, c: src }));
     store.set("pg:code:c", src);
@@ -113,7 +117,7 @@ export default function Playground() {
         </nav>
       </header>
 
-      {tab === "mysql" ? <MySqlWorkspace /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
+      {tab === "mysql" ? <MySqlWorkspace /> : tab === "network" ? <NetworkLab /> : tab === "mariadb" ? <MariaDbLab /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
         <main className="flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-900/40 px-3 py-2">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{cfg.label}</span>
@@ -125,9 +129,23 @@ export default function Playground() {
           </div>
 
           {tab === "cpp" && (
-            <p className="flex items-start gap-2 border-b border-amber-900/40 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-200/90">
-              <Info size={14} className="mt-0.5 shrink-0" aria-hidden />{CXX_LIMIT_NOTE}
-            </p>
+            <details className="group border-b border-amber-900/40 bg-amber-950/30 text-xs text-amber-200/90">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 hover:bg-amber-950/50 [&::-webkit-details-marker]:hidden">
+                <Info size={14} className="shrink-0" aria-hidden />
+                <span>C++ runs in your browser with a lightweight standard library: no <code>&lt;map&gt;</code>, <code>&lt;sstream&gt;</code> or exceptions yet.</span>
+                <span className="ml-auto flex shrink-0 items-center gap-1 text-amber-300/70"><span className="hidden sm:inline">Details</span><ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden /></span>
+              </summary>
+              <div className="grid gap-3 px-3 pb-2.5 pt-1 sm:grid-cols-2">
+                <div>
+                  <p className="mb-1 font-semibold text-emerald-300">Works</p>
+                  <ul className="list-disc space-y-0.5 pl-4">{CXX_SUPPORTED.map((t) => <li key={t}>{t}</li>)}</ul>
+                </div>
+                <div>
+                  <p className="mb-1 font-semibold text-rose-300">Not available yet</p>
+                  <ul className="list-disc space-y-0.5 pl-4">{CXX_MISSING.map((t) => <li key={t}>{t}</li>)}</ul>
+                </div>
+              </div>
+            </details>
           )}
           <div className="min-h-0 flex-1">
             <Editor

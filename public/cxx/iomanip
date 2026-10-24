@@ -1,0 +1,20 @@
+// Lightweight <iomanip> for the in-browser playground.
+#pragma once
+#include <iostream>
+
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+namespace pg_detail {
+struct set_w { int n; };
+struct set_p { int n; };
+struct set_f { char c; };
+}  // namespace pg_detail
+
+inline pg_detail::set_w setw(int n) { return {n}; }
+inline pg_detail::set_p setprecision(int n) { return {n}; }
+inline pg_detail::set_f setfill(char c) { return {c}; }
+inline ostream &operator<<(ostream &os, pg_detail::set_w m) { os.set_width(m.n); return os; }
+inline ostream &operator<<(ostream &os, pg_detail::set_p m) { os.set_precision(m.n); return os; }
+inline ostream &operator<<(ostream &os, pg_detail::set_f m) { os.set_fill(m.c); return os; }
+
+_LIBCPP_END_NAMESPACE_STD

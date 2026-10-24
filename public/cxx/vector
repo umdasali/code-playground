@@ -1,0 +1,124 @@
+// Lightweight std::vector for the in-browser playground (the real libc++ <vector> cannot be compiled there).
+#pragma once
+#include <iosfwd>  // defines the libc++ namespace macros
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <initializer_list>
+#include <new>
+#include <utility>
+
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+// libc++'s <iosfwd> already declares vector<T, Allocator = allocator<T>>; the allocator is accepted and ignored.
+template <typename T, typename Alloc>
+class vector {
+  T *d_ = nullptr;
+  size_t n_ = 0, cap_ = 0;
+
+  void reallocate(size_t c) {
+    T *p = static_cast<T *>(malloc(c * sizeof(T)));
+    for (size_t i = 0; i < n_; i++) { new (p + i) T(static_cast<T &&>(d_[i])); d_[i].~T(); }
+    free(d_);
+    d_ = p;
+    cap_ = c;
+  }
+  void need(size_t n) { if (n > cap_) reallocate(cap_ * 2 > n ? cap_ * 2 : (n < 4 ? 4 : n)); }
+  [[noreturn]] static void oob() { fputs("std::vector::at: index out of range\n", stderr); abort(); }
+
+ public:
+  typedef T value_type;
+  typedef T *iterator;
+  typedef const T *const_iterator;
+
+  vector() = default;
+  explicit vector(size_t n) { need(n); for (; n_ < n; n_++) new (d_ + n_) T(); }
+  vector(size_t n, const T &v) { need(n); for (; n_ < n; n_++) new (d_ + n_) T(v); }
+  vector(initializer_list<T> il) { need(il.size()); for (const T &v : il) new (d_ + n_++) T(v); }
+  vector(const vector &o) { need(o.n_); for (; n_ < o.n_; n_++) new (d_ + n_) T(o.d_[n_]); }
+  vector(vector &&o) noexcept : d_(o.d_), n_(o.n_), cap_(o.cap_) { o.d_ = nullptr; o.n_ = o.cap_ = 0; }
+  template <typename It, typename = decltype(*declval<It>())>
+  vector(It a, It b) { for (; a != b; ++a) push_back(*a); }
+  ~vector() { clear(); free(d_); }
+
+  vector &operator=(const vector &o) {
+    if (this != &o) { clear(); need(o.n_); for (; n_ < o.n_; n_++) new (d_ + n_) T(o.d_[n_]); }
+    return *this;
+  }
+  vector &operator=(vector &&o) noexcept {
+    if (this != &o) { clear(); free(d_); d_ = o.d_; n_ = o.n_; cap_ = o.cap_; o.d_ = nullptr; o.n_ = o.cap_ = 0; }
+    return *this;
+  }
+  vector &operator=(initializer_list<T> il) { clear(); need(il.size()); for (const T &v : il) new (d_ + n_++) T(v); return *this; }
+
+  size_t size() const { return n_; }
+  size_t capacity() const { return cap_; }
+  bool empty() const { return n_ == 0; }
+  T *data() { return d_; }
+  const T *data() const { return d_; }
+  void reserve(size_t n) { if (n > cap_) reallocate(n); }
+  void shrink_to_fit() {}
+
+  T &operator[](size_t i) { return d_[i]; }
+  const T &operator[](size_t i) const { return d_[i]; }
+  T &at(size_t i) { if (i >= n_) oob(); return d_[i]; }
+  const T &at(size_t i) const { if (i >= n_) oob(); return d_[i]; }
+  T &front() { return d_[0]; }
+  const T &front() const { return d_[0]; }
+  T &back() { return d_[n_ - 1]; }
+  const T &back() const { return d_[n_ - 1]; }
+
+  iterator begin() { return d_; }
+  iterator end() { return d_ + n_; }
+  const_iterator begin() const { return d_; }
+  const_iterator end() const { return d_ + n_; }
+  const_iterator cbegin() const { return d_; }
+  const_iterator cend() const { return d_ + n_; }
+
+  void push_back(const T &v) { T copy(v); need(n_ + 1); new (d_ + n_++) T(static_cast<T &&>(copy)); }
+  void push_back(T &&v) { T moved(static_cast<T &&>(v)); need(n_ + 1); new (d_ + n_++) T(static_cast<T &&>(moved)); }
+  template <typename... A>
+  T &emplace_back(A &&...a) { T tmp(static_cast<A &&>(a)...); need(n_ + 1); new (d_ + n_) T(static_cast<T &&>(tmp)); return d_[n_++]; }
+  void pop_back() { d_[--n_].~T(); }
+  void clear() { while (n_) d_[--n_].~T(); }
+  void resize(size_t n) { while (n_ > n) d_[--n_].~T(); need(n); while (n_ < n) new (d_ + n_++) T(); }
+  void resize(size_t n, const T &v) { while (n_ > n) d_[--n_].~T(); need(n); while (n_ < n) new (d_ + n_++) T(v); }
+  void assign(size_t n, const T &v) { clear(); resize(n, v); }
+
+  iterator insert(const_iterator pos, const T &v) {
+    size_t i = static_cast<size_t>(pos - d_);
+    T copy(v);
+    need(n_ + 1);
+    if (i < n_) {
+      new (d_ + n_) T(static_cast<T &&>(d_[n_ - 1]));
+      for (size_t j = n_ - 1; j > i; j--) d_[j] = static_cast<T &&>(d_[j - 1]);
+      d_[i] = static_cast<T &&>(copy);
+    } else {
+      new (d_ + n_) T(static_cast<T &&>(copy));
+    }
+    n_++;
+    return d_ + i;
+  }
+  iterator erase(const_iterator pos) {
+    size_t i = static_cast<size_t>(pos - d_);
+    for (size_t j = i; j + 1 < n_; j++) d_[j] = static_cast<T &&>(d_[j + 1]);
+    d_[--n_].~T();
+    return d_ + i;
+  }
+  iterator erase(const_iterator a, const_iterator b) {
+    size_t i = static_cast<size_t>(a - d_), k = static_cast<size_t>(b - a);
+    for (size_t j = i; j + k < n_; j++) d_[j] = static_cast<T &&>(d_[j + k]);
+    while (k--) d_[--n_].~T();
+    return d_ + i;
+  }
+  void swap(vector &o) { T *d = d_; size_t n = n_, c = cap_; d_ = o.d_; n_ = o.n_; cap_ = o.cap_; o.d_ = d; o.n_ = n; o.cap_ = c; }
+};
+
+template <typename T, typename A> bool operator==(const vector<T, A> &a, const vector<T, A> &b) {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); i++) if (!(a[i] == b[i])) return false;
+  return true;
+}
+template <typename T, typename A> bool operator!=(const vector<T, A> &a, const vector<T, A> &b) { return !(a == b); }
+
+_LIBCPP_END_NAMESPACE_STD

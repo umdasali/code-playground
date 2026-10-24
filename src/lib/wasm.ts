@@ -35,7 +35,8 @@ const CXX_CONFIG_SITE = `#ifndef _LIBCPP___CONFIG_SITE
 #endif
 `;
 
-// libc++ is not linked in this toolchain, so operator new/delete (and the pure-virtual hook) are supplied here.
+// libc++ is not linked in this toolchain, so operator new/delete, the pure-virtual hook and the (single-threaded)
+// static-initialisation guards are supplied here.
 const CXX_RUNTIME_SHIM = `#include <cstdlib>
 #include <cstddef>
 void *operator new(std::size_t n) { void *p = std::malloc(n ? n : 1); if (!p) std::abort(); return p; }
@@ -45,10 +46,19 @@ void operator delete[](void *p) noexcept { std::free(p); }
 void operator delete(void *p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void *p, std::size_t) noexcept { std::free(p); }
 extern "C" void __cxa_pure_virtual() { std::abort(); }
+extern "C" int __cxa_guard_acquire(long long *g) { return *reinterpret_cast<char *>(g) ? 0 : 1; }
+extern "C" void __cxa_guard_release(long long *g) { *reinterpret_cast<char *>(g) = 1; }
+extern "C" void __cxa_guard_abort(long long *) {}
 `;
 
-// Headers known to compile with this toolchain. Anything else (iostream, vector, string, algorithm, ...) hangs clang.
+// libc++'s own <iostream>, <string>, <vector>, <memory> and <algorithm> hang or crash this clang build, so the playground
+// ships small replacements (public/cxx/, same names, found first through -I). Exceptions need an unwinder that the
+// toolchain lacks, so they are compiled out with -fno-exceptions.
+const CXX_OWN_HEADERS = ["iostream", "iomanip", "string", "vector", "memory", "algorithm", "numeric"];
+
+// Headers known to compile with this toolchain. Anything else (map, sstream, functional, ...) is not supported yet.
 const CXX_OK_HEADERS = new Set([
+  ...CXX_OWN_HEADERS,
   // the C library, C++ spelling
   "cassert", "cctype", "cerrno", "cfenv", "cfloat", "cinttypes", "climits", "clocale", "cmath", "csetjmp", "csignal",
   "cstdarg", "cstddef", "cstdint", "cstdio", "cstdlib", "cstring", "ctime", "cwchar", "cwctype",
@@ -57,8 +67,52 @@ const CXX_OK_HEADERS = new Set([
   "stdexcept", "iterator", "version", "compare", "concepts", "bit", "ratio", "iosfwd",
 ]);
 
+// The same facts as CXX_LIMIT_NOTE, split up for the notice above the C++ editor.
+export const CXX_SUPPORTED = [
+  "classes, templates, lambdas, virtual functions, new/delete, constexpr",
+  "<iostream> (cin, cout, cerr), <iomanip>, <string>, <vector>, <algorithm>, <numeric>",
+  "<memory> (unique_ptr, shared_ptr, weak_ptr), <array>, <optional>, <utility>",
+  "the C library: <cstdio>, <cstdlib>, <cstring>, <cmath>, <ctime>, ...",
+];
+export const CXX_MISSING = [
+  "<map>, <set>, <unordered_map>, <list>, <deque>, <queue>, <stack>",
+  "<sstream>, <fstream>, <functional>, <tuple>, <chrono>, <random>",
+  "threads, and exceptions (try, catch, throw)",
+];
+
 export const CXX_LIMIT_NOTE =
-  "In the browser, C++ supports the full language (classes, templates, lambdas, new/delete, virtual functions) plus the C library (<cstdio>, <cstdlib>, <cstring>, <cmath>, ...), <array>, <optional> and <utility>. <iostream>, STL containers, smart pointers and exceptions are not available yet.";
+  "In the browser, C++ supports the full language (classes, templates, lambdas, new/delete, virtual functions) plus <iostream>, <iomanip>, <string>, <vector>, <memory> (unique_ptr, shared_ptr), <algorithm>, <numeric>, <array>, <optional>, <utility> and the C library (<cstdio>, <cstdlib>, <cstring>, <cmath>, ...). <map>, <set>, <sstream>, <functional>, threads and exceptions (try/catch/throw) are not available yet.";
+
+// What to use instead of a header the browser toolchain cannot compile.
+const CXX_HEADER_HINTS: Record<string, string> = {
+  map: "no associative containers yet; use a std::vector of pairs or a plain array",
+  unordered_map: "no associative containers yet; use a std::vector of pairs or a plain array",
+  set: "no associative containers yet; keep a sorted std::vector (std::sort, std::binary_search)",
+  unordered_set: "no associative containers yet; keep a sorted std::vector (std::sort, std::binary_search)",
+  list: "use std::vector instead",
+  deque: "use std::vector instead",
+  queue: "use std::vector with an index for the front",
+  stack: "use std::vector (push_back, back, pop_back)",
+  sstream: "use snprintf from <cstdio> or std::to_string",
+  fstream: "files are not available to C++ programs here; read input from std::cin",
+  functional: "use lambdas or plain function pointers",
+  tuple: "use std::pair or a small struct",
+  thread: "threads are not available in the browser sandbox",
+  mutex: "threads are not available in the browser sandbox",
+  atomic: "threads are not available in the browser sandbox",
+  chrono: "use <ctime> (clock, time)",
+  random: "use rand and srand from <cstdlib>",
+  regex: "not available; use <cstring> (strstr, strchr)",
+  filesystem: "not available in the browser sandbox",
+  bitset: "use plain integers with <bit> and bit operations",
+  variant: "use a tagged struct or union",
+  any: "use a template or a base class",
+  span: "pass a pointer and a size, or a std::vector",
+  string_view: "use const char * or const std::string &",
+  format: "use printf from <cstdio> or std::cout",
+  ranges: "use the iterator versions in <algorithm>",
+  coroutine: "not available in the browser sandbox",
+};
 
 const SEED_FILES: Record<string, string> = {
   "notes.txt": Array.from({ length: 12 }, (_, i) => `line ${i + 1}: ${["hello world", "linux is fun", "practice makes perfect", "grep me", "the quick brown fox"][i % 5]}`).join("\n") + "\n",
@@ -106,12 +160,22 @@ function progressReporter(label: string, status?: Status) {
 
 let compiler: Promise<Sandbox> | null = null;
 
+// The playground's own C++ headers, served from public/cxx/ and placed where -I/workspace/pgcfg/inc finds them.
+async function cxxHeaders(): Promise<Record<string, string>> {
+  const files = await Promise.all(CXX_OWN_HEADERS.map(async (h) => {
+    const res = await fetch(`/cxx/${h}`);
+    if (!res.ok) throw new Error(`Could not load the C++ header <${h}> (HTTP ${res.status}).`);
+    return [`/workspace/pgcfg/inc/${h}`, await res.text()] as const;
+  }));
+  return Object.fromEntries(files);
+}
+
 async function getCompiler(status?: Status): Promise<Sandbox> {
   if (!compiler) {
-    compiler = client()
-      .then((w) => w.sandboxes.create({
+    compiler = Promise.all([client(), cxxHeaders()])
+      .then(([w, headers]) => w.sandboxes.create({
         packages: ["clang/clang"],
-        files: { "/workspace/pgcfg/__config_site": CXX_CONFIG_SITE, "/workspace/pgcfg/shim.cpp": CXX_RUNTIME_SHIM },
+        files: { "/workspace/pgcfg/__config_site": CXX_CONFIG_SITE, "/workspace/pgcfg/shim.cpp": CXX_RUNTIME_SHIM, ...headers },
         onPackageProgress: progressReporter("the C/C++ compiler", status),
       }))
       .catch((e) => { compiler = null; throw e; });
@@ -126,13 +190,29 @@ async function dropCompiler() {
 }
 
 function cxxHeaderProblem(code: string): string | null {
-  const bad = new Set<string>();
-  for (const m of code.matchAll(/^\s*#\s*include\s*<([A-Za-z0-9_./]+)>/gm)) {
-    const h = m[1];
-    if (h.includes(".")) continue; // C headers such as <stdio.h>
-    if (!CXX_OK_HEADERS.has(h)) bad.add(h);
+  const bad = new Map<string, number>(); // header -> first line it is included on
+  code.split("\n").forEach((line, i) => {
+    const m = line.match(/^\s*#\s*include\s*<([A-Za-z0-9_./]+)>/);
+    if (!m || m[1].includes(".") || CXX_OK_HEADERS.has(m[1])) return; // C headers such as <stdio.h> contain a dot
+    if (!bad.has(m[1])) bad.set(m[1], i + 1);
+  });
+  if (bad.size === 0) return null;
+  const lines = [...bad].map(([h, line]) => {
+    const hint = CXX_HEADER_HINTS[h];
+    return `  line ${line}: <${h}> is not available in the browser${hint ? ` (${hint})` : ""}`;
+  });
+  return `${lines.join("\n")}\n\n${CXX_LIMIT_NOTE}`;
+}
+
+// Turn the compiler's wording for a language feature the toolchain cannot provide into an explanation.
+function cxxDiagnosticHints(diagnostics: string): string | null {
+  if (/exceptions disabled/.test(diagnostics)) {
+    return "Note: exceptions (try, catch, throw) are not available in the browser yet. Return an error code or check the value before using it.";
   }
-  return bad.size === 0 ? null : `Not available in the browser yet: ${[...bad].map((h) => `<${h}>`).join(", ")}.\n${CXX_LIMIT_NOTE}\nUse printf from <cstdio> for output.`;
+  if (/use of typeid requires -frtti|cannot use dynamic_cast|dynamic_cast.*-fno-rtti/.test(diagnostics)) {
+    return "Note: run-time type information (typeid, dynamic_cast) is turned off in the browser. Use virtual functions instead.";
+  }
+  return null;
 }
 
 const tidy = (s: string) =>
@@ -156,7 +236,7 @@ export async function runNative(lang: "c" | "cpp", code: string, stdin: string, 
 
     const args = lang === "c"
       ? [`/workspace/${file}`, "-o", "/workspace/main.wasm", "-O1", "-Wall", "-Wextra", "-lm"]
-      : ["-I/workspace/pgcfg", "-std=c++20", "-fno-rtti", `/workspace/${file}`, "/workspace/pgcfg/shim.cpp", "-o", "/workspace/main.wasm", "-O1", "-Wall", "-Wextra"];
+      : ["-I/workspace/pgcfg/inc", "-I/workspace/pgcfg", "-std=c++20", "-fno-rtti", "-fno-exceptions", `/workspace/${file}`, "/workspace/pgcfg/shim.cpp", "-o", "/workspace/main.wasm", "-O1", "-Wall", "-Wextra"];
     const proc = await sb.command("clang", args, { cwd: "/workspace" }).spawn({ stdout: "capture", stderr: "capture" });
     const waited = await Promise.race([
       proc.wait({ check: false }),
@@ -165,10 +245,13 @@ export async function runNative(lang: "c" | "cpp", code: string, stdin: string, 
     if (waited === "timeout") {
       await proc.kill().catch(() => {});
       await dropCompiler();
-      return fail("The compiler timed out. This usually means the program includes a header the in-browser toolchain cannot handle.", { timedOut: true });
+      return fail("The compiler timed out. This usually means the program uses a library feature the in-browser toolchain cannot handle (see the notice above the editor).", { timedOut: true });
     }
     const diagnostics = tidy(waited.stderr.text());
-    if (waited.exitCode !== 0) return fail(diagnostics || "Compilation failed.", { exitCode: waited.exitCode });
+    if (waited.exitCode !== 0) {
+      const hint = lang === "cpp" ? cxxDiagnosticHints(diagnostics) : null;
+      return fail([diagnostics || "Compilation failed.", hint].filter(Boolean).join("\n\n"), { exitCode: waited.exitCode });
+    }
 
     status?.("Running…", null);
     const wasm = await sb.fs.readFile("/workspace/main.wasm");
