@@ -4,6 +4,7 @@ import Editor from "@monaco-editor/react";
 import { Braces, Eraser, FileCode2, Globe, Palette, Play, RotateCcw, Terminal as TerminalIcon, type LucideIcon } from "lucide-react";
 import { Button, cn } from "./ui";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { handlePreviewRequest } from "@/lib/laravel";
 
 type Part = "html" | "css" | "js";
 type Level = "log" | "info" | "warn" | "error";
@@ -75,10 +76,70 @@ const bridge = (run: number) => `<script>(function(){
   window.addEventListener("unhandledrejection",function(e){ send("error",["Unhandled promise rejection: "+fmt(e.reason)]); });
 })();<\/script>`;
 
+// Runs inside the iframe: fetch() and XMLHttpRequest calls to /api/... (or localhost:8000) are answered by the Laravel tab's app.
+const apiBridge = (run: number) => `<script>(function(){
+  var RUN=${run}, seq=0, pending={};
+  var ABS=/^(https?:)?\\/\\/(localhost:8000|127\\.0\\.0\\.1:8000|laravel\\.test|app\\.test)(\\/|$)/i;
+  function isApi(u){ u=String(u); return (u.charAt(0)==="/"&&u.charAt(1)!=="/")||/^api\\//.test(u)||ABS.test(u); }
+  function call(method,url,headers,body){
+    return new Promise(function(resolve){ var id=++seq; pending[id]=resolve;
+      parent.postMessage({pg:true,type:"api",run:RUN,id:id,method:method,url:String(url),headers:headers,body:body},"*"); });
+  }
+  window.addEventListener("message",function(e){ var m=e.data; if(m&&m.pgApi&&pending[m.id]){ var r=pending[m.id]; delete pending[m.id]; r(m); } });
+  var nativeFetch=window.fetch;
+  window.fetch=function(input,init){
+    var url=typeof input==="string"?input:(input&&input.url)||String(input);
+    if(!isApi(url)) return nativeFetch.apply(this,arguments);
+    init=init||{};
+    var method=String(init.method||(input&&input.method)||"GET").toUpperCase();
+    var headers={}, h=init.headers||(input&&input.headers);
+    if(h){ if(Array.isArray(h)) h.forEach(function(p){headers[p[0]]=p[1];}); else if(h.forEach) h.forEach(function(v,k){headers[k]=v;}); else for(var k in h) headers[k]=h[k]; }
+    var body=init.body;
+    if(body!=null&&typeof body!=="string"){
+      if(window.FormData&&body instanceof FormData){ var o={}; body.forEach(function(v,k){o[k]=v;}); body=JSON.stringify(o); if(!headers["Content-Type"]) headers["Content-Type"]="application/json"; }
+      else body=String(body);
+    }
+    return call(method,url,headers,body).then(function(m){
+      var empty=m.status===204||m.status===205||m.status===304;
+      return new Response(empty?null:m.body,{status:m.status,headers:m.headers});
+    });
+  };
+  var Native=window.XMLHttpRequest;
+  function XHR(){
+    var real=new Native(), self=this, api=false, method="GET", url="", headers={}, resHeaders={}, listeners={};
+    self.readyState=0; self.status=0; self.statusText=""; self.responseText=""; self.response=""; self.responseType=""; self.timeout=0; self.withCredentials=false;
+    self.UNSENT=0; self.OPENED=1; self.HEADERS_RECEIVED=2; self.LOADING=3; self.DONE=4;
+    function fire(type){ var f=self["on"+type]; var ev={type:type,target:self}; if(typeof f==="function") f.call(self,ev); (listeners[type]||[]).forEach(function(l){ l.call(self,ev); }); }
+    self.addEventListener=function(t,f){ (listeners[t]=listeners[t]||[]).push(f); };
+    self.removeEventListener=function(t,f){ listeners[t]=(listeners[t]||[]).filter(function(x){return x!==f;}); };
+    self.open=function(m,u){ method=m; url=u; if(isApi(u)){ api=true; self.readyState=1; fire("readystatechange"); } else real.open.apply(real,arguments); };
+    self.setRequestHeader=function(k,v){ if(api) headers[k]=v; else real.setRequestHeader(k,v); };
+    self.getResponseHeader=function(k){ return api?(resHeaders[String(k).toLowerCase()]||null):real.getResponseHeader(k); };
+    self.getAllResponseHeaders=function(){ return api?Object.keys(resHeaders).map(function(k){return k+": "+resHeaders[k];}).join("\\r\\n"):real.getAllResponseHeaders(); };
+    self.overrideMimeType=function(){}; self.abort=function(){ if(!api) real.abort(); };
+    self.send=function(body){
+      if(!api){
+        real.responseType=self.responseType; real.timeout=self.timeout; real.withCredentials=self.withCredentials;
+        ["readystatechange","load","error","abort","timeout","loadend","progress"].forEach(function(t){ real["on"+t]=function(){
+          self.readyState=real.readyState; self.status=real.status; self.statusText=real.statusText;
+          try{ self.responseText=real.responseText; }catch(e){} self.response=real.response; fire(t); }; });
+        real.send(body); return;
+      }
+      call(method,url,headers,body).then(function(m){
+        resHeaders={}; for(var k in m.headers) resHeaders[k.toLowerCase()]=m.headers[k];
+        self.status=m.status; self.statusText=m.status===200?"OK":""; self.responseText=m.body; self.readyState=4;
+        self.response=self.responseType==="json"?(function(){try{return JSON.parse(m.body);}catch(e){return null;}})():m.body;
+        fire("readystatechange"); fire("load"); fire("loadend");
+      });
+    };
+  }
+  window.XMLHttpRequest=XHR;
+})();<\/script>`;
+
 function buildDoc(code: Record<Part, string>, run: number) {
   const js = code.js.replaceAll("</script", "<\\/script");
   const css = code.css.replaceAll("</style", "<\\/style");
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body>${bridge(run)}${code.html}<script>${js}<\/script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body>${bridge(run)}${apiBridge(run)}${code.html}<script>${js}<\/script></body></html>`;
 }
 
 export default function WebPlayground() {
@@ -113,6 +174,22 @@ export default function WebPlayground() {
     const onMsg = (e: MessageEvent) => {
       const m = e.data;
       if (e.source !== frame.current?.contentWindow || !m?.pg || m.run !== runId.current) return;
+      if (m.type === "api") {
+        // a fetch()/XHR from the page to /api/...: the Laravel tab's PHP app answers it
+        const target = e.source as Window;
+        const label = `${String(m.method).toUpperCase()} ${m.url}`;
+        const note = (level: Level, text: string) => setLines((l) => [...l.slice(-199), { level, text }]);
+        void handlePreviewRequest({ method: m.method, url: m.url, headers: m.headers, body: m.body }, (s) => note("info", s))
+          .then((r) => {
+            note(r.status < 400 ? "info" : "warn", `${label} → ${r.status} (${r.ms} ms)`);
+            target.postMessage({ pgApi: true, id: m.id, status: r.status, headers: r.headers, body: r.body }, "*");
+          })
+          .catch((err: Error) => {
+            note("error", `${label} failed: ${err.message}`);
+            target.postMessage({ pgApi: true, id: m.id, status: 500, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: err.message }) }, "*");
+          });
+        return;
+      }
       setLines((l) => [...l.slice(-199), { level: m.level, text: String(m.text) }]);
     };
     window.addEventListener("message", onMsg);

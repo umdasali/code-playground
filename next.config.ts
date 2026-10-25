@@ -4,6 +4,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
+    // @php-wasm/universal also targets Node and mentions worker_threads in a branch that never runs in the browser.
+    resolveAlias: {
+      worker_threads: { browser: "./src/lib/empty-module.ts" },
+    },
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

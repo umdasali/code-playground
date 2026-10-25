@@ -1,4 +1,4 @@
-export type TabId = "c" | "cpp" | "bash" | "terminal" | "mysql" | "web" | "network" | "mariadb";
+export type TabId = "c" | "cpp" | "bash" | "terminal" | "mysql" | "web" | "network" | "mariadb" | "laravel";
 
 export interface TabConfig {
   id: TabId;
@@ -72,6 +72,12 @@ uname -a
     id: "web",
     label: "HTML/CSS/JS",
     monaco: "html",
+    starter: "",
+  },
+  {
+    id: "laravel",
+    label: "Laravel",
+    monaco: "php",
     starter: "",
   },
   {

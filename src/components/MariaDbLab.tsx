@@ -4,7 +4,8 @@ import { Circle, CircleCheck, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadSqlJs } from "@/lib/browser-sql";
 import { Maria } from "@/lib/mariadb";
-import { MARIA_EXERCISES, MARIA_GROUPS, mariaExerciseById } from "@/lib/mariadblab";
+import { DEFAULT_MARIA_EXERCISE, MARIA_EXERCISES, MARIA_GROUPS, mariaExerciseById } from "@/lib/mariadblab";
+import { getSharedMaria, resetSharedMaria } from "@/lib/shared-maria";
 import CliConsole from "./CliConsole";
 import { Button, cn } from "./ui";
 
@@ -23,9 +24,10 @@ function start(m: Maria, id: string) {
 export default function MariaDbLab() {
   const [exId, setExId] = useState(() => {
     try { const v = localStorage.getItem("pg:mariaex"); if (v && MARIA_EXERCISES.some((e) => e.id === v)) return v; } catch {}
-    return MARIA_EXERCISES[0].id;
+    return DEFAULT_MARIA_EXERCISE;
   });
-  const [m, setM] = useState<Maria | null>(null); // a mutable engine: it is changed in event handlers, then `tick` re-renders
+  const [own, setOwn] = useState<Maria | null>(null); // a mutable engine: it is changed in event handlers, then `tick` re-renders
+  const [shared, setShared] = useState<Maria | null>(null); // the server the Laravel tab also uses
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const ex = mariaExerciseById(exId);
@@ -36,17 +38,24 @@ export default function MariaDbLab() {
       if (cancelled) return;
       const engine = new Maria(SQL);
       start(engine, exId);
-      setM(engine);
+      setOwn(engine);
     }).catch((e) => { if (!cancelled) setError((e as Error).message); });
+    getSharedMaria().then((e) => { if (!cancelled) setShared(e); }).catch(() => {});
     return () => { cancelled = true; };
     // the engine is created once; changing the exercise goes through pick()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const m = ex.shared ? shared : own;
   const pick = (id: string) => {
     setExId(id);
     try { localStorage.setItem("pg:mariaex", id); } catch {}
-    if (m) { start(m, id); setTick((t) => t + 1); }
+    if (!mariaExerciseById(id).shared && own) start(own, id);
+    setTick((t) => t + 1);
+  };
+  const reset = async () => {
+    if (ex.shared) { if (window.confirm("Reset the shared server? Every database, including the Laravel project's tables, is deleted.")) { await resetSharedMaria(); setTick((t) => t + 1); } }
+    else pick(exId);
   };
 
   const run = (line: string) => { m?.input(line); setTick((t) => t + 1); };
@@ -69,7 +78,7 @@ export default function MariaDbLab() {
               ))}
             </select>
           </label>
-          <Button icon={RotateCcw} onClick={() => pick(exId)} className="self-end" title="Start this exercise again from a fresh server">Reset</Button>
+          <Button icon={RotateCcw} onClick={() => void reset()} className="self-end" title={ex.shared ? "Delete every database on the shared server" : "Start this exercise again from a fresh server"}>Reset</Button>
         </div>
 
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
@@ -77,7 +86,7 @@ export default function MariaDbLab() {
           <div className="mt-2 space-y-1.5 text-xs leading-relaxed text-zinc-400">{ex.brief.map((p) => <p key={p}>{p}</p>)}</div>
         </section>
 
-        <section aria-label="Checks" className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+        {checks.length > 0 && <section aria-label="Checks" className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
           <h3 className="flex items-center text-sm font-semibold text-zinc-200">Checks<span className="ml-auto text-xs font-normal text-zinc-400">{done} / {checks.length}</span></h3>
           <ul className="mt-2 space-y-1.5">
             {checks.map((c) => (
@@ -87,7 +96,7 @@ export default function MariaDbLab() {
             ))}
           </ul>
           {m && done === checks.length && <p className="mt-2 text-xs font-medium text-emerald-300" role="status">All checks pass. Pick the next exercise.</p>}
-        </section>
+        </section>}
 
         <details className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-400">
           <summary className="cursor-pointer text-sm font-semibold text-zinc-200">How this works</summary>

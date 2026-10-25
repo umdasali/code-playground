@@ -10,6 +10,7 @@ export interface MariaExercise {
   brief: string[];
   hints: string[];
   start: "client" | "shell";
+  shared?: boolean; // uses the server shared with the Laravel tab instead of a fresh one
   setup: (m: Maria) => void;
   checks: (m: Maria) => Check[];
 }
@@ -49,6 +50,16 @@ const FUNCTION_DRILLS: { text: string; sql: string }[] = [
 ];
 
 export const MARIA_EXERCISES: MariaExercise[] = [
+  {
+    id: "free", group: "Sandbox", title: "Free practice (shared with Laravel)", start: "client", shared: true,
+    brief: [
+      "A MariaDB server with no exercise, kept while you switch tabs. It is the same server the Laravel tab uses: the database named in the project's .env file (laravel by default) appears here.",
+      "Run migrations in the Laravel tab, then look at the tables with SHOW TABLES and DESCRIBE. Insert rows here and read them from Eloquent. Reset wipes every database on this server.",
+    ],
+    hints: ["SHOW DATABASES;", "USE laravel;", "SHOW TABLES;", "DESCRIBE products;", "SELECT * FROM products LIMIT 5;", "SHOW CREATE TABLE products\\G", "SELECT * FROM migrations;"],
+    setup: () => {},
+    checks: () => [],
+  },
   {
     id: "create-db", group: "Databases and tables", title: "Create a database and a table", start: "client",
     brief: [
@@ -234,5 +245,6 @@ export const MARIA_EXERCISES: MariaExercise[] = [
   },
 ];
 
+export const DEFAULT_MARIA_EXERCISE = "create-db";
 export const MARIA_GROUPS = [...new Set(MARIA_EXERCISES.map((e) => e.group))];
 export const mariaExerciseById = (id: string) => MARIA_EXERCISES.find((e) => e.id === id) ?? MARIA_EXERCISES[0];

@@ -3,16 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/copy-wasmer.mjs",
-    "predev": "node scripts/copy-wasmer.mjs",
+    "postinstall": "node scripts/copy-wasmer.mjs && node scripts/copy-php-wasm.mjs",
+    "predev": "node scripts/copy-wasmer.mjs && node scripts/copy-php-wasm.mjs && node scripts/build-laravel-templates.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-wasmer.mjs",
+    "prebuild": "node scripts/copy-wasmer.mjs && node scripts/copy-php-wasm.mjs && node scripts/build-laravel-templates.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@php-wasm/universal": "^3.1.60",
+    "@php-wasm/web-8-3": "^3.1.60",
     "@wasmer/sdk": "^0.19.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

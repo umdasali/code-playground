@@ -1,11 +1,12 @@
 "use client";
 
 import Editor from "@monaco-editor/react";
-import { CheckCircle2, ChevronDown, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, DatabaseZap, Network, type LucideIcon } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, DatabaseZap, Network, Server, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { C_EXAMPLES, CPP_EXAMPLES, type Example } from "@/lib/examples";
 import { TABS, type TabId } from "@/lib/languages";
 import { CXX_MISSING, CXX_SUPPORTED, runBash, runNative, type RunResult } from "@/lib/wasm";
+import LaravelLab from "./LaravelLab";
 import MariaDbLab from "./MariaDbLab";
 import MySqlWorkspace from "./MySqlWorkspace";
 import NetworkLab from "./NetworkLab";
@@ -21,6 +22,7 @@ const TAB_ICONS: Record<TabId, LucideIcon> = {
   web: Globe,
   network: Network,
   mariadb: DatabaseZap,
+  laravel: Server,
   mysql: Database,
 };
 
@@ -73,11 +75,23 @@ export default function Playground() {
     }
   }, [tab, code, stdin]);
 
-  const custom = tab === "mysql" || tab === "terminal" || tab === "web" || tab === "network" || tab === "mariadb";
+  const custom = tab === "mysql" || tab === "terminal" || tab === "web" || tab === "network" || tab === "mariadb" || tab === "laravel";
   const openInC = (src: string) => {
     setCodes((c) => ({ ...c, c: src }));
     store.set("pg:code:c", src);
     switchTab("c");
+  };
+
+  // The Laravel tab hands its test page to the HTML/CSS/JS tab, and sends you to the shared database in the MariaDB tab.
+  const openWeb = (web: { html: string; css: string; js: string }) => {
+    store.set("pg:web:html", web.html);
+    store.set("pg:web:css", web.css);
+    store.set("pg:web:js", web.js);
+    switchTab("web");
+  };
+  const openMariaDb = () => {
+    store.set("pg:mariaex", "free");
+    switchTab("mariadb");
   };
 
   // Ctrl/Cmd+Enter runs the code.
@@ -117,7 +131,7 @@ export default function Playground() {
         </nav>
       </header>
 
-      {tab === "mysql" ? <MySqlWorkspace /> : tab === "network" ? <NetworkLab /> : tab === "mariadb" ? <MariaDbLab /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
+      {tab === "mysql" ? <MySqlWorkspace /> : tab === "network" ? <NetworkLab /> : tab === "mariadb" ? <MariaDbLab /> : tab === "laravel" ? <LaravelLab openWeb={openWeb} openMariaDb={openMariaDb} /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
         <main className="flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-900/40 px-3 py-2">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{cfg.label}</span>

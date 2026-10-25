@@ -1,0 +1,17 @@
+{
+  "id": "blog-api",
+  "title": "Blog API (relationships)",
+  "description": "Posts, comments and tags: hasMany, belongsToMany, eager loading, withCount, whereHas, nested routes, route model binding by slug and pagination.",
+  "order": 2,
+  "start": ["php artisan migrate:fresh --seed"],
+  "requests": [
+    { "label": "List posts", "method": "GET", "url": "/api/posts" },
+    { "label": "Filter by tag", "method": "GET", "url": "/api/posts?tag=laravel" },
+    { "label": "Show by slug", "method": "GET", "url": "/api/posts/hello-laravel" },
+    { "label": "Comments of a post", "method": "GET", "url": "/api/posts/hello-laravel/comments" },
+    { "label": "Add a comment", "method": "POST", "url": "/api/posts/hello-laravel/comments", "body": "{\n  \"author\": \"Asha\",\n  \"body\": \"Great post!\"\n}" },
+    { "label": "Create a post", "method": "POST", "url": "/api/posts", "body": "{\n  \"title\": \"My first API\",\n  \"body\": \"Written in the browser.\",\n  \"published\": true,\n  \"tags\": [\"php\", \"api\"]\n}" },
+    { "label": "Tags with counts", "method": "GET", "url": "/api/tags" }
+  ],
+  "console": ["php artisan migrate:fresh --seed", "App\\Models\\Post::with('tags')->first()->tags->pluck('name')", "App\\Models\\Post::withCount('comments')->orderByDesc('comments_count')->first()", "App\\Models\\Tag::has('posts')->get()"]
+}

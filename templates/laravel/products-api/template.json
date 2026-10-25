@@ -1,0 +1,66 @@
+{
+  "id": "products-api",
+  "title": "Products API (CRUD)",
+  "description": "A resource API: migration, model, form requests with validation, API resource, factory and seeder. Run php artisan migrate and db:seed, then open the test page in the HTML/CSS/JS tab.",
+  "start": [
+    "php artisan migrate:fresh --seed"
+  ],
+  "requests": [
+    {
+      "label": "Ping",
+      "method": "GET",
+      "url": "/api/ping"
+    },
+    {
+      "label": "List (page 1)",
+      "method": "GET",
+      "url": "/api/products?per_page=5"
+    },
+    {
+      "label": "Search",
+      "method": "GET",
+      "url": "/api/products?search=lap"
+    },
+    {
+      "label": "Show one",
+      "method": "GET",
+      "url": "/api/products/1"
+    },
+    {
+      "label": "Create",
+      "method": "POST",
+      "url": "/api/products",
+      "body": "{\n  \"name\": \"Keyboard\",\n  \"sku\": \"KEY-100\",\n  \"price\": 49.99,\n  \"stock\": 12\n}"
+    },
+    {
+      "label": "Create (invalid)",
+      "method": "POST",
+      "url": "/api/products",
+      "body": "{\n  \"name\": \"\",\n  \"price\": \"free\"\n}"
+    },
+    {
+      "label": "Update",
+      "method": "PUT",
+      "url": "/api/products/1",
+      "body": "{\n  \"price\": 19.9,\n  \"stock\": 3\n}"
+    },
+    {
+      "label": "Delete",
+      "method": "DELETE",
+      "url": "/api/products/1"
+    },
+    {
+      "label": "Stats",
+      "method": "GET",
+      "url": "/api/products/stats"
+    }
+  ],
+  "console": [
+    "php artisan migrate:fresh --seed",
+    "php artisan route:list",
+    "App\\Models\\Product::count()",
+    "App\\Models\\Product::active()->orderByDesc('price')->first()",
+    "App\\Models\\Product::where('stock', '>', 50)->pluck('name')"
+  ],
+  "order": 1
+}

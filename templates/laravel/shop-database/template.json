@@ -1,0 +1,19 @@
+{
+  "id": "shop-database",
+  "title": "Shop API on the MariaDB database",
+  "description": "Models over tables that already exist in the MariaDB tab's shop database (customers, products, orders). No migrations: Eloquent relations, filters, query builder reports, and writes you can check with SELECT in the MariaDB tab.",
+  "order": 3,
+  "start": ["php artisan route:list"],
+  "requests": [
+    { "label": "Categories", "method": "GET", "url": "/api/categories" },
+    { "label": "Products by category", "method": "GET", "url": "/api/products?category=Audio&sort=price" },
+    { "label": "Product", "method": "GET", "url": "/api/products/10" },
+    { "label": "Customer with orders", "method": "GET", "url": "/api/customers/1" },
+    { "label": "Order with items", "method": "GET", "url": "/api/orders/1" },
+    { "label": "Revenue by category", "method": "GET", "url": "/api/reports/revenue-by-category" },
+    { "label": "Top customers", "method": "GET", "url": "/api/reports/top-customers" },
+    { "label": "Orders per month", "method": "GET", "url": "/api/reports/orders-per-month" },
+    { "label": "Add a customer", "method": "POST", "url": "/api/customers", "body": "{\n  \"name\": \"Maya Roy\",\n  \"email\": \"maya@example.com\",\n  \"city\": \"Kolkata\",\n  \"country\": \"India\"\n}" }
+  ],
+  "console": ["App\\Models\\Customer::count()", "App\\Models\\Customer::with('orders')->find(1)->orders->count()", "DB::table('products')->select('category_id', DB::raw('avg(price) as avg_price'))->groupBy('category_id')->get()", "App\\Models\\Product::where('price', '>', 500)->orderBy('price')->get(['name', 'price'])"]
+}

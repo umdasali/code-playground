@@ -1,0 +1,24 @@
+<main>
+  <h1>Products <small id="count"></small></h1>
+
+  <form id="search">
+    <input name="q" placeholder="Search products…" />
+    <label><input type="checkbox" name="in_stock" /> in stock only</label>
+  </form>
+
+  <table>
+    <thead><tr><th>#</th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="pager"><button id="prev">Prev</button> <span id="page"></span> <button id="next">Next</button></div>
+
+  <h2>Add a product</h2>
+  <form id="create">
+    <input name="name" placeholder="Name" />
+    <input name="sku" placeholder="SKU" />
+    <input name="price" placeholder="Price" />
+    <input name="stock" placeholder="Stock" />
+    <button>Create</button>
+    <ul id="errors"></ul>
+  </form>
+</main>

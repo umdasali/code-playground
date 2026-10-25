@@ -6,7 +6,8 @@ import { Dec, formatTable, formatVertical, mask, matchParen, type Masked, regist
 
 export interface ColMeta { name: string; type: string; nullable: boolean; key: "PRI" | "UNI" | "MUL" | ""; def: string | null; extra: string }
 export interface IndexMeta { name: string; cols: string[]; unique: boolean; primary?: boolean; virtual?: boolean }
-export interface TableMeta { cols: ColMeta[]; indexes: IndexMeta[]; constraints: string[] }
+// sig: the table's SQLite DDL plus its index names when this client last described it, to notice changes made by other programs
+export interface TableMeta { cols: ColMeta[]; indexes: IndexMeta[]; constraints: string[]; sig?: string }
 interface DbEntry { db: Database; tables: Record<string, TableMeta> }
 interface UserRec { name: string; host: string; password: string }
 interface Grant { user: string; host: string; privs: string[]; db: string; table: string }
@@ -590,7 +591,8 @@ export class Maria {
       const ddl = e.db.exec(`SELECT sql FROM sqlite_master WHERE name='${like[1]}'`)[0].values[0][0] as string;
       e.db.run(ddl.replace(new RegExp(`CREATE TABLE\\s+["\`]?${like[1]}["\`]?`, "i"), `CREATE TABLE \`${table}\``));
       e.tables[table] = structuredClone(src);
-      for (const ix of src.indexes.filter((i) => !i.primary)) this.makeIndex(e, table, ix.name, ix.cols, ix.unique);
+      for (const ix of src.indexes.filter((i) => !i.primary && !i.virtual)) this.makeIndex(e, table, ix.name, ix.cols, ix.unique);
+      this.snapshot(e, table);
       return { affected: 0 };
     }
     if (!after.startsWith("(")) {
@@ -672,16 +674,94 @@ export class Maria {
     for (const ix of indexes) this.makeIndex(e, table, ix.name, ix.cols, ix.unique);
     for (const c of cols) if (c.unique && !c.pk) meta.indexes.push({ name: c.meta.name, cols: [c.meta.name], unique: true });
     meta.indexes.push(...virtualFk); // MariaDB creates a plain index for every foreign key
+    this.snapshot(e, table);
     return { affected: 0 };
   }
 
+  // Describe a table that was not created through this client (CTAS, or Laravel migrations) from SQLite's own catalogue.
   private metaFromPragma(e: DbEntry, table: string): TableMeta {
     const rows = e.db.exec(`PRAGMA table_info(\`${table}\`)`)[0]?.values ?? [];
-    return {
-      cols: rows.map((r) => ({ name: String(r[1]), type: String(r[2] || "text").toLowerCase(), nullable: !r[3] && !r[5], key: r[5] ? "PRI" : "", def: r[4] === null ? null : String(r[4]), extra: "" } as ColMeta)),
-      indexes: rows.some((r) => r[5]) ? [{ name: "PRIMARY", cols: rows.filter((r) => r[5]).map((r) => String(r[1])), unique: true, primary: true }] : [],
-      constraints: [],
-    };
+    const ddl = String(e.db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='${table}'`)[0]?.values[0]?.[0] ?? "");
+    const autoInc = /autoincrement/i.test(ddl);
+    const pkCols = rows.filter((r) => r[5]).map((r) => String(r[1]));
+    const cols: ColMeta[] = rows.map((r) => {
+      const raw = String(r[2] || "text").toLowerCase().replace(/\s+/g, " ").replace(/\s*,\s*/g, ",");
+      const isRowId = r[5] && pkCols.length === 1 && raw === "integer";
+      let type = isRowId ? (autoInc ? "bigint(20) unsigned" : "int(11)") : raw === "integer" ? "int(11)" : raw === "varchar" ? "varchar(255)" : raw;
+      type = type.replace(/^(bigint|int|integer|smallint|tinyint|mediumint)\b(?!\()( unsigned)?/, (_m, t: string, u?: string) => `${INT_TYPES[t] ?? t}${u ?? ""}`);
+      let def: string | null = r[4] === null ? null : String(r[4]);
+      if (def !== null && /^'.*'$/.test(def)) def = def.slice(1, -1).replace(/''/g, "'");
+      if (def?.toUpperCase() === "NULL") def = null;
+      return { name: String(r[1]), type, nullable: !r[3] && !r[5], key: r[5] ? "PRI" : "", def, extra: isRowId && autoInc ? "auto_increment" : "" } as ColMeta;
+    });
+    const indexes: IndexMeta[] = pkCols.length ? [{ name: "PRIMARY", cols: pkCols, unique: true, primary: true }] : [];
+    for (const ix of e.db.exec(`PRAGMA index_list(\`${table}\`)`)[0]?.values ?? []) {
+      if (ix[3] === "pk") continue;
+      const iname = String(ix[1]);
+      const icols = (e.db.exec(`PRAGMA index_info(\`${iname}\`)`)[0]?.values ?? []).map((c) => String(c[2]));
+      const name = iname.startsWith(`${table}__`) ? iname.slice(table.length + 2) : iname.startsWith("sqlite_autoindex_") ? icols[0] : iname;
+      indexes.push({ name, cols: icols, unique: !!ix[2] });
+      const first = cols.find((c) => c.name === icols[0]);
+      if (first && !first.key) first.key = ix[2] && icols.length === 1 ? "UNI" : "MUL";
+    }
+    const constraints: string[] = [];
+    const fks = new Map<number, { table: string; from: string[]; to: string[]; onDelete: string; onUpdate: string }>();
+    for (const f of e.db.exec(`PRAGMA foreign_key_list(\`${table}\`)`)[0]?.values ?? []) {
+      const g = fks.get(Number(f[0])) ?? { table: String(f[2]), from: [], to: [], onDelete: String(f[6]), onUpdate: String(f[5]) };
+      g.from.push(String(f[3])); g.to.push(String(f[4]));
+      fks.set(Number(f[0]), g);
+    }
+    for (const g of [...fks.values()].reverse()) {
+      const q = (l: string[]) => l.map((x) => `\`${x}\``).join(",");
+      constraints.push(`CONSTRAINT \`${table}_${g.from.join("_")}_foreign\` FOREIGN KEY (${q(g.from)}) REFERENCES \`${g.table}\` (${q(g.to)})${g.onDelete !== "NO ACTION" ? ` ON DELETE ${g.onDelete}` : ""}${g.onUpdate !== "NO ACTION" ? ` ON UPDATE ${g.onUpdate}` : ""}`);
+      const first = cols.find((c) => c.name === g.from[0]);
+      if (first && !first.key) first.key = "MUL";
+      if (!indexes.some((i) => i.cols[0] === g.from[0])) indexes.push({ name: `${table}_${g.from.join("_")}_foreign`, cols: g.from, unique: false, virtual: true });
+    }
+    return { cols, indexes, constraints, sig: this.signature(e, table) };
+  }
+
+  // ----- sharing a database with another program (the Laravel tab runs PHP against a copy of it) -----
+
+  ensureDatabase(name: string) { if (!this.dbs[name]) this.dbs[name] = { db: this.newDb(), tables: {} }; }
+
+  // The database as a SQLite file. sql.js closes and re-opens the connection to export, which drops PRAGMAs and functions.
+  exportDb(name: string): Uint8Array | null {
+    const e = this.dbs[name];
+    if (!e) return null;
+    if (this.inTxn && this.txnDb === name) { try { e.db.run("COMMIT"); } catch { /* nothing to commit */ } this.inTxn = false; this.txnDb = null; }
+    const bytes = e.db.export();
+    e.db.run("PRAGMA foreign_keys = ON");
+    registerFunctions(e.db, { database: () => this.current, user: () => this.user, lastInsertId: () => this.lastId, rowCount: () => this.rowCount });
+    return bytes;
+  }
+
+  // Replace a database with a SQLite file that another program changed, then rebuild the MariaDB-style table metadata.
+  importDb(name: string, bytes: Uint8Array) {
+    const old = this.dbs[name];
+    const db = new this.SQL.Database(bytes);
+    db.run("PRAGMA foreign_keys = ON");
+    registerFunctions(db, { database: () => this.current, user: () => this.user, lastInsertId: () => this.lastId, rowCount: () => this.rowCount });
+    const entry: DbEntry = { db, tables: {} };
+    const names = (db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")[0]?.values ?? []).map((r) => String(r[0]));
+    for (const t of names) {
+      const prev = old?.tables[t];
+      entry.tables[t] = prev && prev.sig === this.signature(entry, t) ? prev : this.metaFromPragma(entry, t);
+    }
+    old?.db.close();
+    this.dbs[name] = entry;
+    this.version++;
+  }
+
+  private signature(e: DbEntry, table: string): string {
+    const ddl = String(e.db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='${table}'`)[0]?.values[0]?.[0] ?? "");
+    const idx = (e.db.exec(`PRAGMA index_list(\`${table}\`)`)[0]?.values ?? []).map((r) => String(r[1])).sort().join(",");
+    return `${ddl}|${idx}`;
+  }
+  // Remember what a table looked like when this client last changed it.
+  private snapshot(e: DbEntry, table: string) {
+    const t = e.tables[table];
+    if (t) t.sig = this.signature(e, table);
   }
 
   private makeIndex(e: DbEntry, table: string, name: string, cols: string[], unique: boolean) {
@@ -692,6 +772,7 @@ export class Maria {
       t.indexes.push({ name, cols, unique });
       const first = t.cols.find((c) => c.name === cols[0]);
       if (first && !first.key) first.key = unique && cols.length === 1 ? "UNI" : "MUL";
+      this.snapshot(e, table);
     }
   }
 
@@ -736,6 +817,7 @@ export class Maria {
       e.db.run(`ALTER TABLE \`${m[1]}\` RENAME TO \`${m[2]}\``);
       e.tables[m[2]] = e.tables[m[1]];
       delete e.tables[m[1]];
+      this.snapshot(e, m[2]);
     }
     return { affected: 0 };
   }
@@ -770,6 +852,7 @@ export class Maria {
     this.endTxnForDdl();
     if (!ix.primary && !ix.virtual) { try { e.db.run(`DROP INDEX \`${table}__${name}\``); } catch { /* an automatic UNIQUE index has no separate name */ } }
     t.indexes = t.indexes.filter((i) => i !== ix);
+    this.snapshot(e, table);
     for (const c of t.cols) if (c.key !== "PRI") c.key = t.indexes.some((i) => i.cols[0] === c.name) ? (t.indexes.find((i) => i.cols[0] === c.name)!.unique && t.indexes.find((i) => i.cols[0] === c.name)!.cols.length === 1 ? "UNI" : "MUL") : "";
     return { text: ["Query OK, 0 rows affected (0.001 sec)", "Records: 0  Duplicates: 0  Warnings: 0"] };
   }
@@ -854,6 +937,7 @@ export class Maria {
       else if ((mm = a.match(/^AUTO_INCREMENT\s*=?\s*(\d+)/i))) { e.db.run(`INSERT OR REPLACE INTO sqlite_sequence(name, seq) VALUES ('${table}', ${Number(mm[1]) - 1})`); }
       else return fail(1064, "42000", `You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '${unmask(m, a)}' at line 1`);
     }
+    this.snapshot(e, table);
     return { text: [`Query OK, 0 rows affected (0.002 sec)`, "Records: 0  Duplicates: 0  Warnings: 0"] };
   }
 

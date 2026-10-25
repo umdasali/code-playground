@@ -1,0 +1,11 @@
+{
+  "id": "starter",
+  "title": "Empty project",
+  "description": "Just routes/api.php with two closures. Add controllers, models and migrations with the + button, then call your API from the HTML/CSS/JS tab.",
+  "order": 4,
+  "requests": [
+    { "label": "Hello", "method": "GET", "url": "/api/hello" },
+    { "label": "Echo", "method": "POST", "url": "/api/echo", "body": "{\n  \"name\": \"Asha\"\n}" }
+  ],
+  "console": ["php artisan route:list", "collect([3, 1, 2])->sort()->values()", "Str::slug('Hello Laravel')"]
+}
