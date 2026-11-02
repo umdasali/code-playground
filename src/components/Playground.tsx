@@ -1,13 +1,14 @@
 "use client";
 
 import Editor from "@monaco-editor/react";
-import { CheckCircle2, ChevronDown, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, DatabaseZap, Network, Server, type LucideIcon } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, Code2, Database, FileCode2, Globe, Info, Keyboard, Play, RotateCcw, SquareTerminal, Terminal as TerminalIcon, XCircle, Braces, ClipboardCheck, DatabaseZap, Network, Server, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { C_EXAMPLES, CPP_EXAMPLES, type Example } from "@/lib/examples";
 import { TABS, type TabId } from "@/lib/languages";
 import { CXX_MISSING, CXX_SUPPORTED, runBash, runNative, type RunResult } from "@/lib/wasm";
 import LaravelLab from "./LaravelLab";
 import MariaDbLab from "./MariaDbLab";
+import McqTest from "./McqTest";
 import MySqlWorkspace from "./MySqlWorkspace";
 import NetworkLab from "./NetworkLab";
 import Terminal from "./Terminal";
@@ -23,6 +24,7 @@ const TAB_ICONS: Record<TabId, LucideIcon> = {
   network: Network,
   mariadb: DatabaseZap,
   laravel: Server,
+  mcq: ClipboardCheck,
   mysql: Database,
 };
 
@@ -75,7 +77,7 @@ export default function Playground() {
     }
   }, [tab, code, stdin]);
 
-  const custom = tab === "mysql" || tab === "terminal" || tab === "web" || tab === "network" || tab === "mariadb" || tab === "laravel";
+  const custom = tab === "mysql" || tab === "terminal" || tab === "web" || tab === "network" || tab === "mariadb" || tab === "laravel" || tab === "mcq";
   const openInC = (src: string) => {
     setCodes((c) => ({ ...c, c: src }));
     store.set("pg:code:c", src);
@@ -131,7 +133,7 @@ export default function Playground() {
         </nav>
       </header>
 
-      {tab === "mysql" ? <MySqlWorkspace /> : tab === "network" ? <NetworkLab /> : tab === "mariadb" ? <MariaDbLab /> : tab === "laravel" ? <LaravelLab openWeb={openWeb} openMariaDb={openMariaDb} /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
+      {tab === "mysql" ? <MySqlWorkspace /> : tab === "network" ? <NetworkLab /> : tab === "mariadb" ? <MariaDbLab /> : tab === "mcq" ? <McqTest /> : tab === "laravel" ? <LaravelLab openWeb={openWeb} openMariaDb={openMariaDb} /> : tab === "terminal" ? <Terminal openInC={openInC} /> : tab === "web" ? <WebPlayground /> : (
         <main className="flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-900/40 px-3 py-2">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{cfg.label}</span>

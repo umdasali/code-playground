@@ -1,4 +1,4 @@
-export type TabId = "c" | "cpp" | "bash" | "terminal" | "mysql" | "web" | "network" | "mariadb" | "laravel";
+export type TabId = "c" | "cpp" | "bash" | "terminal" | "mysql" | "web" | "network" | "mariadb" | "laravel" | "mcq";
 
 export interface TabConfig {
   id: TabId;
@@ -89,6 +89,12 @@ uname -a
   {
     id: "network",
     label: "Network",
+    monaco: "plaintext",
+    starter: "",
+  },
+  {
+    id: "mcq",
+    label: "MCQ Test",
     monaco: "plaintext",
     starter: "",
   },
